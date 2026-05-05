@@ -1,0 +1,33 @@
+services:
+  - type: web
+    name: coparentes-backend
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: HOST
+        value: 0.0.0.0
+      - key: PORT
+        value: 4000
+      - key: COPARENTES_PUBLIC_BASE_URL
+        sync: false
+      - key: COPARENTES_ALLOWED_ORIGINS
+        sync: false
+      - key: COPARENTES_DB_PATH
+        value: /var/lib/coparentes/coparentes.db
+      - key: COPARENTES_SEED_DEMO_DATA
+        value: false
+      - key: COPARENTES_TRUST_PROXY
+        value: true
+      - key: COPARENTES_JSON_LIMIT
+        value: 1mb
+      - key: COPARENTES_SESSION_TTL_DAYS
+        value: 30
+      - key: COPARENTES_LOG_REQUESTS
+        value: false
+    disk:
+      name: coparentes-data
+      mountPath: /var/lib/coparentes
+      sizeGB: 1
