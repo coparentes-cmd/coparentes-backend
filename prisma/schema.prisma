@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  passwordHash String
+  firstName    String?
+  lastName     String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  sentInvites  Invite[]      @relation("SentInvites")
+  partnerships Partnership[] @relation("PartnershipUser")
+
+  @@index([email])
+}
+
+model Invite {
+  id          String       @id @default(cuid())
+  email       String
+  token       String       @unique
+  status      InviteStatus @default(PENDING)
+  inviterId   String
+  inviter     User         @relation("SentInvites", fields: [inviterId], references: [id], onDelete: Cascade)
+  acceptedBy  String?
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([email])
+  @@index([status])
+  @@index([inviterId])
+}
+
+model Partnership {
+  id         String   @id @default(cuid())
+  userId      String
+  partnerId   String
+  createdAt   DateTime @default(now())
+
+  user       User     @relation("PartnershipUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, partnerId])
+  @@index([userId])
+  @@index([partnerId])
+}
