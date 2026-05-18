@@ -5,14 +5,16 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 
+COPY prisma ./prisma
 COPY src ./src
+
+RUN npx prisma generate
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    PORT=3000 \
-    COPARENTES_TRUST_PROXY=true \
-    COPARENTES_JSON_LIMIT=1mb
+    PORT=3000
 
 EXPOSE 3000
 
-CMD ["node", "src/server.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npm start"]
+
