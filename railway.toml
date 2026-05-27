@@ -1,0 +1,10 @@
+# Railway service config — env vars are set in the Railway dashboard.
+# Start command runs migrations then boots the API (see package.json "start").
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+restartPolicyType = "ON_FAILURE"
