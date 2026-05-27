@@ -1,0 +1,335 @@
+// Coparentes — domain schema (PostgreSQL)
+// InviteCode: pole Workspace.inviteCode (kod dołączenia przez POST /api/auth/join)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  parentA
+  parentB
+  child
+  observer
+}
+
+enum EmailInviteStatus {
+  PENDING
+  ACCEPTED
+  EXPIRED
+}
+
+enum MessageTone {
+  neutral
+  tense
+  aggressive
+  positive
+}
+
+enum ExportType {
+  messages
+  calendar
+  finances
+  fullPack
+}
+
+enum ExportStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+enum CalendarEventType {
+  school
+  medical
+  activity
+  handover
+  holiday
+  other
+}
+
+enum SwapStatus {
+  pending
+  accepted
+  rejected
+  counterProposed
+}
+
+enum ExpenseStatus {
+  pending
+  accepted
+  disputed
+  settled
+}
+
+/// Przestrzeń współrodzicielska (rodzina). inviteCode = kod zaproszenia dla parentB / child / observer.
+model Workspace {
+  id         String   @id @default(cuid())
+  name       String
+  inviteCode String   @unique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  users      User[]
+  children   Child[]
+  threads    Thread[]
+  messages   Message[]
+  exportJobs ExportJob[]
+  custodySlots  CustodySlot[]
+  calendarEvents CalendarEvent[]
+  swapRequests   SwapRequest[]
+  expenses       Expense[]
+  documents      Document[]
+
+  @@index([inviteCode])
+}
+
+model User {
+  id               String    @id @default(cuid())
+  workspaceId      String?
+  workspace        Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name             String
+  email            String    @unique
+  passwordHash     String
+  role             UserRole  @default(parentA)
+  twoFactorEnabled Boolean   @default(false)
+  highConflictMode Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  sessions         Session[]
+  sentEmailInvites EmailInvite[] @relation("SentEmailInvites")
+  threadsCreated   Thread[]      @relation("ThreadCreator")
+  messages         Message[]
+  exportJobs       ExportJob[]
+  calendarEvents   CalendarEvent[] @relation("CalendarEventCreator")
+  swapRequests     SwapRequest[]   @relation("SwapRequester")
+  expensesPaid     Expense[]       @relation("ExpensePayer")
+  documentsUploaded Document[]     @relation("DocumentUploader")
+
+  @@index([email])
+  @@index([workspaceId])
+}
+
+model Child {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  dateOfBirth DateTime
+  school      String?
+  createdAt   DateTime  @default(now())
+
+  threads Thread[]
+
+  calendarEvents CalendarEvent[]
+  expenses       Expense[]
+  documents      Document[]
+
+  @@index([workspaceId])
+}
+
+/// Family document vault entry (metadata + optional inline file for MVP).
+model Document {
+  id            String    @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title         String
+  category      String
+  childId       String?
+  child         Child?    @relation(fields: [childId], references: [id], onDelete: SetNull)
+  fileName      String?
+  mimeType      String?
+  fileUrl       String?
+  contentBase64 String?   @db.Text
+  sizeBytes     Int       @default(0)
+  uploadedById  String
+  uploadedBy    User      @relation("DocumentUploader", fields: [uploadedById], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([workspaceId])
+  @@index([category])
+  @@index([updatedAt])
+}
+
+/// Token sesji API (Bearer) — zamiast JWT; zgodne z Flutter AuthRepository.
+model Session {
+  token     String   @id
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Thread {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  subject      String
+  category     String
+  childId      String?
+  child        Child?    @relation(fields: [childId], references: [id], onDelete: SetNull)
+  createdById  String
+  createdBy    User      @relation("ThreadCreator", fields: [createdById], references: [id])
+  createdAt    DateTime  @default(now())
+  lastActivity DateTime  @default(now())
+
+  messages   Message[]
+  exportJobs ExportJob[]
+
+  @@index([workspaceId])
+  @@index([lastActivity])
+}
+
+model Message {
+  id          String      @id @default(cuid())
+  threadId    String
+  thread      Thread      @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  workspaceId String
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  senderId    String
+  sender      User        @relation(fields: [senderId], references: [id])
+  senderName  String
+  content     String
+  tone        MessageTone @default(neutral)
+  sentAt      DateTime    @default(now())
+  isDelivered Boolean     @default(true)
+  isRead      Boolean     @default(false)
+  hash        String
+
+  @@index([threadId])
+  @@index([workspaceId])
+  @@index([sentAt])
+}
+
+/// Zadanie eksportu dowodów (messages / calendar / finances / fullPack).
+model ExportJob {
+  id            String       @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  requestedById String
+  requestedBy   User         @relation(fields: [requestedById], references: [id])
+  type          ExportType
+  threadId      String?
+  thread        Thread?      @relation(fields: [threadId], references: [id], onDelete: SetNull)
+  fromDate      DateTime
+  toDate        DateTime
+  status        ExportStatus @default(completed)
+  downloadUrl   String?
+  manifestHash  String?
+  payloadJson   String       @db.Text
+  expiresAt     DateTime?
+  createdAt     DateTime     @default(now())
+
+  @@index([workspaceId])
+  @@index([createdAt])
+  @@index([threadId])
+  @@index([expiresAt])
+}
+
+/// Zaproszenie e-mailowe (osobny flow od Workspace.inviteCode).
+model EmailInvite {
+  id         String            @id @default(cuid())
+  email      String
+  token      String            @unique
+  status     EmailInviteStatus @default(PENDING)
+  inviterId  String
+  inviter    User              @relation("SentEmailInvites", fields: [inviterId], references: [id], onDelete: Cascade)
+  acceptedBy String?
+  expiresAt  DateTime
+  acceptedAt DateTime?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@index([email])
+  @@index([status])
+  @@index([inviterId])
+}
+
+model CustodySlot {
+  id               String    @id @default(cuid())
+  workspaceId      String
+  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  date             DateTime
+  custodian        UserRole
+  handoverLocation String?
+  handoverTime     String?
+  createdAt        DateTime  @default(now())
+
+  @@index([workspaceId])
+  @@index([date])
+}
+
+model CalendarEvent {
+  id          String            @id @default(cuid())
+  workspaceId String
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  startDate   DateTime
+  endDate     DateTime?
+  type        CalendarEventType @default(other)
+  childId     String?
+  child       Child?            @relation(fields: [childId], references: [id], onDelete: SetNull)
+  createdById String
+  createdBy   User              @relation("CalendarEventCreator", fields: [createdById], references: [id])
+  location    String?
+  createdAt   DateTime          @default(now())
+
+  @@index([workspaceId])
+  @@index([startDate])
+}
+
+model SwapRequest {
+  id           String     @id @default(cuid())
+  workspaceId  String
+  workspace    Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  requesterId  String
+  requester    User       @relation("SwapRequester", fields: [requesterId], references: [id])
+  requesterName String
+  originalDate DateTime
+  proposedDate DateTime
+  reason       String?
+  status       SwapStatus @default(pending)
+  responseNote String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+model Expense {
+  id          String        @id @default(cuid())
+  workspaceId String
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  title       String
+  amount      Float
+  currency    String        @default("PLN")
+  category    String
+  childId     String?
+  child       Child?        @relation(fields: [childId], references: [id], onDelete: SetNull)
+  paidById    String
+  paidBy      User          @relation("ExpensePayer", fields: [paidById], references: [id])
+  splitRatio  Float
+  date        DateTime
+  receiptUrl  String?
+  status      ExpenseStatus @default(pending)
+  note        String?
+  hash        String
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([workspaceId])
+  @@index([date])
+  @@index([status])
+}
