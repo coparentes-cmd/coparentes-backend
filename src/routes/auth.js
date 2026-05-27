@@ -62,19 +62,21 @@ router.post('/register', authActionLimiter, async (req, res, next) => {
       return res.status(409).json({ error: 'email_in_use' });
     }
 
-    const workspace = await createWorkspace({ name: data.workspaceName });
     const passwordHash = await bcrypt.hash(data.password, 12);
 
-    const user = await prisma.user.create({
-      data: {
-        workspaceId: workspace.id,
-        name: data.name,
-        email: data.email,
-        passwordHash,
-        role: 'parentA',
-        twoFactorEnabled: false,
-        highConflictMode: false
-      }
+    const user = await prisma.$transaction(async (tx) => {
+      const workspace = await createWorkspace({ name: data.workspaceName, client: tx });
+      return tx.user.create({
+        data: {
+          workspaceId: workspace.id,
+          name: data.name,
+          email: data.email,
+          passwordHash,
+          role: 'parentA',
+          twoFactorEnabled: false,
+          highConflictMode: false
+        }
+      });
     });
 
     return issueSessionResponse(user, 201, res);

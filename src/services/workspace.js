@@ -2,12 +2,12 @@ import { prisma } from '../lib/prisma.js';
 import { createInviteCode } from '../utils/security.js';
 import { serializeChild, serializeUser } from './serializers.js';
 
-export async function createWorkspace({ name }) {
+export async function createWorkspace({ name, client = prisma }) {
   let inviteCode = createInviteCode();
   let attempts = 0;
 
   while (attempts < 5) {
-    const existing = await prisma.workspace.findUnique({ where: { inviteCode } });
+    const existing = await client.workspace.findUnique({ where: { inviteCode } });
     if (!existing) {
       break;
     }
@@ -15,7 +15,7 @@ export async function createWorkspace({ name }) {
     attempts += 1;
   }
 
-  return prisma.workspace.create({
+  return client.workspace.create({
     data: {
       name,
       inviteCode
