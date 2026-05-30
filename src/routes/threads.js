@@ -5,6 +5,7 @@ import { requireParentRole } from '../middleware/rbac.js';
 import {
   addMessageToThread,
   createThread,
+  getMessageAttachmentDownload,
   getOrCreateCategoryThread,
   getThreadById,
   listThreads,
@@ -84,21 +85,57 @@ router.post('/channel', requireParentRole, async (req, res, next) => {
   }
 });
 
+const attachmentSchema = z.object({
+  id: z.string().trim().min(1).max(80),
+  name: z.string().trim().min(1).max(255),
+  type: z.string().trim().min(1).max(120),
+  sizeBytes: z.number().int().positive().max(262144),
+  contentBase64: z.string().min(1).max(400_000)
+});
+
+router.get(
+  '/:threadId/messages/:messageId/attachments/:attachmentId',
+  async (req, res, next) => {
+    try {
+      const attachment = await getMessageAttachmentDownload({
+        workspaceId: req.user.workspaceId,
+        threadId: req.params.threadId,
+        messageId: req.params.messageId,
+        attachmentId: req.params.attachmentId
+      });
+
+      if (!attachment) {
+        return res.status(404).json({ error: 'attachment_not_found' });
+      }
+
+      return res.json(attachment);
+    } catch (error) {
+      return next(error);
+    }
+  }
+);
+
 // Bardziej specyficzna ścieżka przed /:threadId (Flutter: sendMessage)
 router.post('/:threadId/messages', requireParentRole, async (req, res, next) => {
   try {
     const schema = z.object({
-      content: z.string().min(1).max(4000),
-      tone: z.enum(['neutral', 'tense', 'aggressive', 'positive']).optional()
+      content: z.string().max(4000),
+      tone: z.enum(['neutral', 'tense', 'aggressive', 'positive']).optional(),
+      attachments: z.array(attachmentSchema).max(3).optional()
     });
     const data = schema.parse(req.body);
+
+    if (!data.content.trim() && (data.attachments?.length ?? 0) === 0) {
+      return res.status(400).json({ error: 'message_empty' });
+    }
 
     const thread = await addMessageToThread({
       workspaceId: req.user.workspaceId,
       threadId: req.params.threadId,
       sender: req.user,
       content: data.content,
-      tone: data.tone ?? 'neutral'
+      tone: data.tone ?? 'neutral',
+      attachments: data.attachments ?? []
     });
 
     if (!thread) {
@@ -107,6 +144,15 @@ router.post('/:threadId/messages', requireParentRole, async (req, res, next) => 
 
     return res.status(201).json(thread);
   } catch (error) {
+    if (error?.code === 'message_empty') {
+      return res.status(400).json({ error: 'message_empty' });
+    }
+    if (error?.code === 'attachment_too_large') {
+      return res.status(413).json({ error: 'attachment_too_large' });
+    }
+    if (error?.code === 'too_many_attachments' || error?.code === 'invalid_attachment') {
+      return res.status(400).json({ error: error.code });
+    }
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
     }

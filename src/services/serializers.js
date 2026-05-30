@@ -1,3 +1,8 @@
+import {
+  parseStoredAttachments,
+  serializeAttachmentsForClient
+} from './messageAttachments.js';
+
 export function serializeUser(user) {
   return {
     id: user.id,
@@ -20,6 +25,8 @@ export function serializeChild(child) {
 }
 
 export function serializeMessage(message) {
+  const attachments = parseStoredAttachments(message.attachmentsJson);
+
   return {
     id: message.id,
     threadId: message.threadId,
@@ -27,7 +34,7 @@ export function serializeMessage(message) {
     senderName: message.senderName,
     content: message.content,
     tone: message.tone,
-    attachments: [],
+    attachments: serializeAttachmentsForClient(attachments),
     sentAt: message.sentAt.toISOString(),
     isDelivered: message.isDelivered,
     isRead: message.isRead,

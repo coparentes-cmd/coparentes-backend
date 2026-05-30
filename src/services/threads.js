@@ -1,6 +1,11 @@
 import { prisma } from '../lib/prisma.js';
 import { createIntegrityHash } from '../utils/security.js';
 import { serializeThread } from './serializers.js';
+import {
+  normalizeAttachments,
+  parseStoredAttachments,
+  serializeAttachmentsForClient
+} from './messageAttachments.js';
 
 export const CATEGORY_CHANNELS = [
   'Szkoła',
@@ -136,7 +141,8 @@ export async function addMessageToThread({
   threadId,
   sender,
   content,
-  tone = 'neutral'
+  tone = 'neutral',
+  attachments = []
 }) {
   const thread = await prisma.thread.findFirst({
     where: { id: threadId, workspaceId }
@@ -146,13 +152,22 @@ export async function addMessageToThread({
     return null;
   }
 
+  const normalizedAttachments = normalizeAttachments(attachments);
+  const trimmedContent = content.trim();
+  if (!trimmedContent && normalizedAttachments.length === 0) {
+    const error = new Error('message_empty');
+    error.code = 'message_empty';
+    throw error;
+  }
+
   const sentAt = new Date();
   const senderName = sender.name.split(' ')[0] || sender.name;
   const payload = {
     threadId: thread.id,
     senderId: sender.id,
-    content,
-    sentAt: sentAt.toISOString()
+    content: trimmedContent,
+    sentAt: sentAt.toISOString(),
+    attachmentIds: normalizedAttachments.map((item) => item.id)
   };
 
   await prisma.$transaction([
@@ -162,12 +177,16 @@ export async function addMessageToThread({
         workspaceId,
         senderId: sender.id,
         senderName,
-        content,
+        content: trimmedContent,
         tone,
         sentAt,
         isDelivered: true,
         isRead: false,
-        hash: createIntegrityHash(payload)
+        hash: createIntegrityHash(payload),
+        attachmentsJson:
+          normalizedAttachments.length > 0
+            ? JSON.stringify(normalizedAttachments)
+            : null
       }
     }),
     prisma.thread.update({
@@ -177,4 +196,31 @@ export async function addMessageToThread({
   ]);
 
   return getThreadById(workspaceId, thread.id, sender.id);
+}
+
+export async function getMessageAttachmentDownload({
+  workspaceId,
+  threadId,
+  messageId,
+  attachmentId
+}) {
+  const message = await prisma.message.findFirst({
+    where: {
+      id: messageId,
+      threadId,
+      workspaceId
+    }
+  });
+
+  if (!message) {
+    return null;
+  }
+
+  const attachments = parseStoredAttachments(message.attachmentsJson);
+  const attachment = attachments.find((item) => item.id === attachmentId);
+  if (!attachment?.contentBase64) {
+    return null;
+  }
+
+  return serializeAttachmentsForClient([attachment], { includeContent: true })[0];
 }

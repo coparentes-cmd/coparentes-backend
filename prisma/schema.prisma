@@ -205,6 +205,7 @@ model Message {
   isDelivered Boolean     @default(true)
   isRead      Boolean     @default(false)
   hash        String
+  attachmentsJson String? @db.Text
 
   @@index([threadId])
   @@index([workspaceId])
