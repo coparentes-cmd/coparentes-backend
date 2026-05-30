@@ -2,7 +2,7 @@ import { prisma } from '../lib/prisma.js';
 import { createIntegrityHash } from '../utils/security.js';
 import { serializeThread } from './serializers.js';
 
-export async function listThreads(workspaceId) {
+export async function listThreads(workspaceId, viewerUserId) {
   const threads = await prisma.thread.findMany({
     where: { workspaceId },
     orderBy: { lastActivity: 'desc' },
@@ -11,10 +11,12 @@ export async function listThreads(workspaceId) {
     }
   });
 
-  return threads.map((thread) => serializeThread(thread, thread.messages));
+  return threads.map((thread) =>
+    serializeThread(thread, thread.messages, viewerUserId)
+  );
 }
 
-export async function getThreadById(workspaceId, threadId) {
+export async function getThreadById(workspaceId, threadId, viewerUserId) {
   const thread = await prisma.thread.findFirst({
     where: { id: threadId, workspaceId },
     include: {
@@ -26,7 +28,7 @@ export async function getThreadById(workspaceId, threadId) {
     return null;
   }
 
-  return serializeThread(thread, thread.messages);
+  return serializeThread(thread, thread.messages, viewerUserId);
 }
 
 export async function createThread({
@@ -58,7 +60,29 @@ export async function createThread({
     }
   });
 
-  return getThreadById(workspaceId, thread.id);
+  return getThreadById(workspaceId, thread.id, createdBy.id);
+}
+
+export async function markThreadAsRead({ workspaceId, threadId, userId }) {
+  const thread = await prisma.thread.findFirst({
+    where: { id: threadId, workspaceId }
+  });
+
+  if (!thread) {
+    return null;
+  }
+
+  await prisma.message.updateMany({
+    where: {
+      threadId,
+      workspaceId,
+      senderId: { not: userId },
+      isRead: false
+    },
+    data: { isRead: true }
+  });
+
+  return getThreadById(workspaceId, threadId, userId);
 }
 
 export async function addMessageToThread({
@@ -106,5 +130,5 @@ export async function addMessageToThread({
     })
   ]);
 
-  return getThreadById(workspaceId, thread.id);
+  return getThreadById(workspaceId, thread.id, sender.id);
 }

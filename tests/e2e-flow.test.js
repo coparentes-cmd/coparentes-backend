@@ -202,6 +202,55 @@ describe('E2E flow (register → join → thread → message → export → down
     assert.equal(lastMessage.tone, 'neutral');
     assert.ok(lastMessage.hash);
 
+    // 4b. Parent A sends — Parent B must see the message
+    const sendFromA = await request(server, 'POST', `/api/threads/${threadId}/messages`, {
+      token: tokenA,
+      body: {
+        content: 'Wiadomość E2E od parentA',
+        tone: 'neutral'
+      }
+    });
+    assert.equal(sendFromA.status, 201);
+    assert.equal(sendFromA.json.messages.at(-1).content, 'Wiadomość E2E od parentA');
+
+    const listAsB = await request(server, 'GET', '/api/threads', {
+      token: tokenB
+    });
+    assert.equal(listAsB.status, 200);
+    const threadForB = listAsB.json.threads.find((t) => t.id === threadId);
+    assert.ok(threadForB, 'parentB should see thread created by parentA');
+    assert.ok(
+      threadForB.messages.some((m) => m.content === 'Wiadomość E2E od parentA'),
+      'parentB should see message sent by parentA'
+    );
+    assert.equal(
+      threadForB.hasUnread,
+      true,
+      'parentB should have unread incoming message from parentA'
+    );
+
+    const listAsA = await request(server, 'GET', '/api/threads', {
+      token: tokenA
+    });
+    const threadForA = listAsA.json.threads.find((t) => t.id === threadId);
+    assert.equal(
+      threadForA.hasUnread,
+      false,
+      'parentA should not count own message as unread'
+    );
+
+    const markRead = await request(server, 'POST', `/api/threads/${threadId}/read`, {
+      token: tokenB
+    });
+    assert.equal(markRead.status, 200);
+    assert.equal(markRead.json.hasUnread, false);
+
+    const listAfterRead = await request(server, 'GET', '/api/threads', {
+      token: tokenB
+    });
+    const threadAfterRead = listAfterRead.json.threads.find((t) => t.id === threadId);
+    assert.equal(threadAfterRead.hasUnread, false);
+
     // 5. List threads (parentA) — Flutter: getThreads
     const listThreads = await request(server, 'GET', '/api/threads', {
       token: tokenA

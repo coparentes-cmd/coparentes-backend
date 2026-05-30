@@ -36,14 +36,21 @@ export function serializeMessage(message) {
   };
 }
 
-export function serializeThread(thread, messages) {
+export function serializeThread(thread, messages, viewerUserId = null) {
+  const hasUnread =
+    viewerUserId == null
+      ? messages.some((message) => !message.isRead)
+      : messages.some(
+          (message) => !message.isRead && message.senderId !== viewerUserId
+        );
+
   return {
     id: thread.id,
     subject: thread.subject,
     category: thread.category,
     childId: thread.childId,
     lastActivity: thread.lastActivity.toISOString(),
-    hasUnread: messages.some((message) => !message.isRead),
+    hasUnread,
     messages: messages.map(serializeMessage)
   };
 }

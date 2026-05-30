@@ -6,7 +6,8 @@ import {
   addMessageToThread,
   createThread,
   getThreadById,
-  listThreads
+  listThreads,
+  markThreadAsRead
 } from '../services/threads.js';
 
 const router = express.Router();
@@ -15,7 +16,7 @@ router.use(requireAuth);
 
 router.get('/', async (req, res, next) => {
   try {
-    const threads = await listThreads(req.user.workspaceId);
+    const threads = await listThreads(req.user.workspaceId, req.user.id);
     return res.json({ threads });
   } catch (error) {
     return next(error);
@@ -83,10 +84,32 @@ router.post('/:threadId/messages', requireParentRole, async (req, res, next) => 
 
 router.get('/:threadId', async (req, res, next) => {
   try {
-    const thread = await getThreadById(req.user.workspaceId, req.params.threadId);
+    const thread = await getThreadById(
+      req.user.workspaceId,
+      req.params.threadId,
+      req.user.id
+    );
     if (!thread) {
       return res.status(404).json({ error: 'thread_not_found' });
     }
+    return res.json(thread);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post('/:threadId/read', async (req, res, next) => {
+  try {
+    const thread = await markThreadAsRead({
+      workspaceId: req.user.workspaceId,
+      threadId: req.params.threadId,
+      userId: req.user.id
+    });
+
+    if (!thread) {
+      return res.status(404).json({ error: 'thread_not_found' });
+    }
+
     return res.json(thread);
   } catch (error) {
     return next(error);

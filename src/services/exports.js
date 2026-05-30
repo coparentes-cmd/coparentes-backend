@@ -34,11 +34,11 @@ function filterThreadsByDateRange(threads, fromDate, toDate) {
 
 async function loadMessageThreads(workspaceId, threadId) {
   if (threadId) {
-    const thread = await getThreadById(workspaceId, threadId);
+    const thread = await getThreadById(workspaceId, threadId, null);
     return thread ? [thread] : [];
   }
 
-  return listThreads(workspaceId);
+  return listThreads(workspaceId, null);
 }
 
 async function buildExportPayload({
