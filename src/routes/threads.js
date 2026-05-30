@@ -5,6 +5,7 @@ import { requireParentRole } from '../middleware/rbac.js';
 import {
   addMessageToThread,
   createThread,
+  getOrCreateCategoryThread,
   getThreadById,
   listThreads,
   markThreadAsRead
@@ -44,6 +45,37 @@ router.post('/', requireParentRole, async (req, res, next) => {
   } catch (error) {
     if (error?.code === 'child_not_found') {
       return res.status(400).json({ error: 'child_not_found' });
+    }
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
+router.post('/channel', requireParentRole, async (req, res, next) => {
+  try {
+    const schema = z.object({
+      category: z.enum([
+        'Szkoła',
+        'Zdrowie',
+        'Finansowe',
+        'Zmiana grafiku',
+        'Inne'
+      ])
+    });
+    const data = schema.parse(req.body);
+
+    const thread = await getOrCreateCategoryThread({
+      workspaceId: req.user.workspaceId,
+      createdBy: req.user,
+      category: data.category
+    });
+
+    return res.json(thread);
+  } catch (error) {
+    if (error?.code === 'invalid_category') {
+      return res.status(400).json({ error: 'invalid_category' });
     }
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });

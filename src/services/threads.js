@@ -2,6 +2,14 @@ import { prisma } from '../lib/prisma.js';
 import { createIntegrityHash } from '../utils/security.js';
 import { serializeThread } from './serializers.js';
 
+export const CATEGORY_CHANNELS = [
+  'Szkoła',
+  'Zdrowie',
+  'Finansowe',
+  'Zmiana grafiku',
+  'Inne'
+];
+
 export async function listThreads(workspaceId, viewerUserId) {
   const threads = await prisma.thread.findMany({
     where: { workspaceId },
@@ -38,6 +46,10 @@ export async function createThread({
   category,
   childId
 }) {
+  if (subject === category && CATEGORY_CHANNELS.includes(category)) {
+    return getOrCreateCategoryThread({ workspaceId, createdBy, category });
+  }
+
   if (childId) {
     const child = await prisma.child.findFirst({
       where: { id: childId, workspaceId }
@@ -61,6 +73,35 @@ export async function createThread({
   });
 
   return getThreadById(workspaceId, thread.id, createdBy.id);
+}
+
+export async function getOrCreateCategoryThread({
+  workspaceId,
+  createdBy,
+  category
+}) {
+  if (!CATEGORY_CHANNELS.includes(category)) {
+    const error = new Error('invalid_category');
+    error.code = 'invalid_category';
+    throw error;
+  }
+
+  const existing = await prisma.thread.findFirst({
+    where: { workspaceId, category, subject: category },
+    orderBy: { createdAt: 'asc' }
+  });
+
+  if (existing) {
+    return getThreadById(workspaceId, existing.id, createdBy.id);
+  }
+
+  return createThread({
+    workspaceId,
+    createdBy,
+    subject: category,
+    category,
+    childId: null
+  });
 }
 
 export async function markThreadAsRead({ workspaceId, threadId, userId }) {

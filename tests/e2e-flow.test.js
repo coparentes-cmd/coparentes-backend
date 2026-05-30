@@ -251,6 +251,21 @@ describe('E2E flow (register → join → thread → message → export → down
     const threadAfterRead = listAfterRead.json.threads.find((t) => t.id === threadId);
     assert.equal(threadAfterRead.hasUnread, false);
 
+    const schoolChannel = await request(server, 'POST', '/api/threads/channel', {
+      token: tokenA,
+      body: { category: 'Szkoła' }
+    });
+    assert.equal(schoolChannel.status, 200);
+    assert.equal(schoolChannel.json.subject, 'Szkoła');
+    assert.equal(schoolChannel.json.category, 'Szkoła');
+
+    const schoolAgain = await request(server, 'POST', '/api/threads/channel', {
+      token: tokenB,
+      body: { category: 'Szkoła' }
+    });
+    assert.equal(schoolAgain.status, 200);
+    assert.equal(schoolAgain.json.id, schoolChannel.json.id);
+
     // 5. List threads (parentA) — Flutter: getThreads
     const listThreads = await request(server, 'GET', '/api/threads', {
       token: tokenA
