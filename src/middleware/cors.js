@@ -37,7 +37,9 @@ const originPatterns = [
   // Netlify preview + production deploys
   /^https:\/\/[a-z0-9-]+(?:--[a-z0-9-]+)?\.netlify\.app$/i,
   // Coparentes marketing / app domains
-  /^https:\/\/(?:[a-z0-9-]+\.)*coparentes\.ai$/i
+  /^https:\/\/(?:[a-z0-9-]+\.)*coparentes\.ai$/i,
+  // Custom domains registered via Netlify (e.g. getcoparentes.app)
+  /^https:\/\/(?:[a-z0-9-]+\.)*coparentes\.app$/i
 ];
 
 export function getCorsConfigSummary() {

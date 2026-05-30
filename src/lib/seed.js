@@ -67,16 +67,26 @@ export async function seedTestUser(options = {}) {
   return ensureTestUser(options);
 }
 
-export async function seedDemoData() {
+export async function seedDemoData(options = {}) {
   if (process.env.ALLOW_SEED !== 'true') {
     console.warn('[seed] ALLOW_SEED is not true — skipping demo data seed.');
     return;
   }
 
-  console.warn('[seed] WARNING: Seeding demo accounts into the database.');
-  const userCount = await prisma.user.count();
-  if (userCount > 0) {
+  const existingAnna = await prisma.user.findUnique({
+    where: { email: 'anna@coparentes.app' }
+  });
+  if (existingAnna) {
+    console.log('[seed] Demo Kowalscy already exists — skipping.');
     return;
+  }
+
+  console.warn('[seed] WARNING: Seeding demo accounts into the database.');
+  if (!options.force) {
+    const userCount = await prisma.user.count();
+    if (userCount > 0) {
+      return;
+    }
   }
 
   const passwordHash = await bcrypt.hash('Coparentes!123', 12);
