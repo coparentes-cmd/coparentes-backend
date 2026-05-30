@@ -15,7 +15,7 @@
     "db:push": "prisma generate && prisma db push",
     "db:seed": "ALLOW_SEED=true SEED_DEMO_DATA=true node -e \"import('./src/lib/seed.js').then(m=>m.seedDemoData()).then(()=>process.exit(0))\"",
     "db:seed:test": "ALLOW_SEED=true node scripts/seed-test-user.js",
-    "test": "node --test tests/flutter-api.test.js tests/security.test.js tests/serializers.test.js",
+    "test": "node --test tests/flutter-api.test.js tests/security.test.js tests/serializers.test.js tests/category-channel.test.js",
     "test:e2e": "RUN_E2E=true node --test tests/e2e-flow.test.js",
     "test:all": "node --test tests/flutter-api.test.js tests/security.test.js tests/e2e-flow.test.js",
     "test:e2e:full": "RUN_E2E=true node --test tests/flutter-api.test.js tests/security.test.js tests/e2e-flow.test.js",

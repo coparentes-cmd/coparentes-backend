@@ -95,13 +95,18 @@ export async function getOrCreateCategoryThread({
     return getThreadById(workspaceId, existing.id, createdBy.id);
   }
 
-  return createThread({
-    workspaceId,
-    createdBy,
-    subject: category,
-    category,
-    childId: null
+  const thread = await prisma.thread.create({
+    data: {
+      workspaceId,
+      subject: category,
+      category,
+      childId: null,
+      createdById: createdBy.id,
+      lastActivity: new Date()
+    }
   });
+
+  return getThreadById(workspaceId, thread.id, createdBy.id);
 }
 
 export async function markThreadAsRead({ workspaceId, threadId, userId }) {
