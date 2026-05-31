@@ -72,19 +72,23 @@ async function notifySwapInMessagingThread({
   sender,
   content
 }) {
-  const thread = await getOrCreateCategoryThread({
-    workspaceId,
-    createdBy: sender,
-    category: SWAP_MESSAGING_CATEGORY
-  });
+  try {
+    const thread = await getOrCreateCategoryThread({
+      workspaceId,
+      createdBy: sender,
+      category: SWAP_MESSAGING_CATEGORY
+    });
 
-  await addMessageToThread({
-    workspaceId,
-    threadId: thread.id,
-    sender,
-    content,
-    tone: 'neutral'
-  });
+    await addMessageToThread({
+      workspaceId,
+      threadId: thread.id,
+      sender,
+      content,
+      tone: 'neutral'
+    });
+  } catch (error) {
+    console.error('swap_messaging_notify_failed', error);
+  }
 }
 
 export function serializeCustodySlot(slot) {
