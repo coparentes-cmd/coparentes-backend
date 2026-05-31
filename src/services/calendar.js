@@ -1,4 +1,91 @@
 import { prisma } from '../lib/prisma.js';
+import {
+  addMessageToThread,
+  getOrCreateCategoryThread
+} from './threads.js';
+
+const SWAP_MESSAGING_CATEGORY = 'Zmiana grafiku';
+
+function formatPlDate(value) {
+  const date = new Date(value);
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  return `${day}.${month}.${date.getFullYear()}`;
+}
+
+function buildSwapRequestMessage(swap) {
+  let content = [
+    'Wniosek o zamianę dnia opieki',
+    '',
+    `Oryginalny dzień: ${formatPlDate(swap.originalDate)}`,
+    `Proponowany dzień: ${formatPlDate(swap.proposedDate)}`
+  ].join('\n');
+
+  if (swap.reason) {
+    content += `\nPowód: ${swap.reason}`;
+  }
+
+  content +=
+    '\n\nOdpowiedz w Kalendarz → Zamiany (Akceptuj/Odrzuć) lub tutaj w wątku.';
+
+  return content;
+}
+
+function buildSwapResponseMessage(swap, responder) {
+  const from = formatPlDate(swap.originalDate);
+  const to = formatPlDate(swap.proposedDate);
+  const firstName = responder.name.split(' ')[0] || responder.name;
+
+  if (swap.status === 'accepted') {
+    let content = `${firstName} zaakceptował(a) wniosek o zamianę (${from} → ${to}).`;
+    if (swap.responseNote) {
+      content += `\nUwagi: ${swap.responseNote}`;
+    }
+    return content;
+  }
+
+  if (swap.status === 'rejected') {
+    let content = `${firstName} odrzucił(a) wniosek o zamianę (${from} → ${to}).`;
+    if (swap.responseNote) {
+      content += `\n${swap.responseNote}`;
+    }
+    return content;
+  }
+
+  if (swap.status === 'counterProposed') {
+    let content = `${firstName} odrzucił(a) wniosek (${from} → ${to}) i zaproponował(a) inne daty.`;
+    if (swap.responseNote) {
+      content += `\n${swap.responseNote}`;
+    }
+    return content;
+  }
+
+  let content = `${firstName} zaktualizował(a) wniosek o zamianę (${from} → ${to}). Status: ${swap.status}.`;
+  if (swap.responseNote) {
+    content += `\nUwagi: ${swap.responseNote}`;
+  }
+  return content;
+}
+
+async function notifySwapInMessagingThread({
+  workspaceId,
+  sender,
+  content
+}) {
+  const thread = await getOrCreateCategoryThread({
+    workspaceId,
+    createdBy: sender,
+    category: SWAP_MESSAGING_CATEGORY
+  });
+
+  await addMessageToThread({
+    workspaceId,
+    threadId: thread.id,
+    sender,
+    content,
+    tone: 'neutral'
+  });
+}
 
 export function serializeCustodySlot(slot) {
   return {
@@ -163,7 +250,17 @@ export async function respondToSwapRequest({
     }
   });
 
-  return serializeSwapRequest(updated);
+  const serialized = serializeSwapRequest(updated);
+
+  if (status === 'accepted' || status === 'rejected' || status === 'counterProposed') {
+    await notifySwapInMessagingThread({
+      workspaceId,
+      sender: responder,
+      content: buildSwapResponseMessage(serialized, responder)
+    });
+  }
+
+  return serialized;
 }
 
 export async function createCalendarEvent({
@@ -224,5 +321,13 @@ export async function createSwapRequest({
     }
   });
 
-  return serializeSwapRequest(row);
+  const serialized = serializeSwapRequest(row);
+
+  await notifySwapInMessagingThread({
+    workspaceId,
+    sender: requester,
+    content: buildSwapRequestMessage(serialized)
+  });
+
+  return serialized;
 }
