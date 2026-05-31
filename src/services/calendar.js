@@ -91,6 +91,59 @@ async function notifySwapInMessagingThread({
   }
 }
 
+function utcDayBounds(isoDate) {
+  const date = new Date(isoDate);
+  const start = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(), 0, 0, 0, 0)
+  );
+  const end = new Date(
+    Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1, 0, 0, 0, 0)
+  );
+  return { start, end };
+}
+
+async function findCustodySlotForDay(workspaceId, isoDate) {
+  const { start, end } = utcDayBounds(isoDate);
+  return prisma.custodySlot.findFirst({
+    where: {
+      workspaceId,
+      date: { gte: start, lt: end }
+    }
+  });
+}
+
+async function applyAcceptedSwapToCalendar({
+  workspaceId,
+  originalDate,
+  proposedDate
+}) {
+  const slotOriginal = await findCustodySlotForDay(workspaceId, originalDate);
+  const slotProposed = await findCustodySlotForDay(workspaceId, proposedDate);
+
+  if (!slotOriginal || !slotProposed) {
+    console.warn('swap_accept_missing_slots', {
+      workspaceId,
+      originalDate,
+      proposedDate
+    });
+    return;
+  }
+
+  const originalCustodian = slotOriginal.custodian;
+  const proposedCustodian = slotProposed.custodian;
+
+  await prisma.$transaction([
+    prisma.custodySlot.update({
+      where: { id: slotOriginal.id },
+      data: { custodian: proposedCustodian }
+    }),
+    prisma.custodySlot.update({
+      where: { id: slotProposed.id },
+      data: { custodian: originalCustodian }
+    })
+  ]);
+}
+
 export function serializeCustodySlot(slot) {
   return {
     id: slot.id,
@@ -244,6 +297,14 @@ export async function respondToSwapRequest({
     const error = new Error('swap_not_allowed');
     error.code = 'swap_not_allowed';
     throw error;
+  }
+
+  if (status === 'accepted') {
+    await applyAcceptedSwapToCalendar({
+      workspaceId,
+      originalDate: existing.originalDate,
+      proposedDate: existing.proposedDate
+    });
   }
 
   const updated = await prisma.swapRequest.update({
