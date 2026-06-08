@@ -194,6 +194,7 @@ export function serializeExpense(expense) {
     splitRatio: expense.splitRatio,
     date: expense.date.toISOString(),
     receiptUrl: expense.receiptUrl,
+    hasReceipt: Boolean(expense.receiptContentBase64),
     status: expense.status,
     note: expense.note,
     hash: expense.hash

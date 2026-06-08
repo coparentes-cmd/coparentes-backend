@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { createIntegrityHash } from '../utils/security.js';
 import { serializeExpense } from './calendar.js';
+import { validateReceiptBase64 } from './receiptOcr.js';
 
 export async function listExpensesInRange(workspaceId, fromDate, toDate) {
   const from = new Date(fromDate);
@@ -37,6 +38,8 @@ export async function createExpense({
   splitRatio,
   date,
   receiptUrl,
+  receiptContentBase64,
+  receiptMimeType,
   status,
   note
 }) {
@@ -58,6 +61,10 @@ export async function createExpense({
       error.code = 'child_not_found';
       throw error;
     }
+  }
+
+  if (receiptContentBase64) {
+    validateReceiptBase64(receiptContentBase64);
   }
 
   const payload = {
@@ -87,20 +94,54 @@ export async function createExpense({
       paidById: paidBy,
       splitRatio,
       date: new Date(date),
-      receiptUrl: receiptUrl ?? null,
+      receiptUrl: receiptContentBase64 ? null : receiptUrl ?? null,
+      receiptContentBase64: receiptContentBase64 ?? null,
+      receiptMimeType: receiptContentBase64 ? (receiptMimeType ?? 'image/jpeg') : null,
       status: status ?? 'pending',
       note: note ?? null,
       hash: createIntegrityHash(payload)
     }
   });
 
+  if (receiptContentBase64) {
+    const updated = await prisma.expense.update({
+      where: { id: row.id },
+      data: {
+        receiptUrl: `finances/expenses/${row.id}/receipt`
+      }
+    });
+    return serializeExpense(updated);
+  }
+
   return serializeExpense(row);
+}
+
+export async function getExpenseReceipt(workspaceId, expenseId) {
+  const row = await prisma.expense.findFirst({
+    where: { id: expenseId, workspaceId },
+    select: {
+      id: true,
+      receiptContentBase64: true,
+      receiptMimeType: true
+    }
+  });
+
+  if (!row?.receiptContentBase64) {
+    return null;
+  }
+
+  return {
+    expenseId: row.id,
+    contentBase64: row.receiptContentBase64,
+    mimeType: row.receiptMimeType ?? 'image/jpeg'
+  };
 }
 
 export async function updateExpenseStatus({
   workspaceId,
   expenseId,
-  status
+  status,
+  note
 }) {
   const existing = await prisma.expense.findFirst({
     where: { id: expenseId, workspaceId }
@@ -110,9 +151,14 @@ export async function updateExpenseStatus({
     return null;
   }
 
+  const data = { status };
+  if (note !== undefined) {
+    data.note = note;
+  }
+
   const updated = await prisma.expense.update({
     where: { id: existing.id },
-    data: { status }
+    data
   });
 
   return serializeExpense(updated);
