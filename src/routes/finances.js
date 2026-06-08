@@ -39,8 +39,15 @@ router.post('/receipts/parse', requireParentRole, async (req, res, next) => {
     if (error?.code === 'receipt_too_large') {
       return res.status(400).json({ error: 'receipt_too_large' });
     }
-    if (error?.code === 'receipt_invalid_base64' || error?.code === 'receipt_empty') {
+    if (
+      error?.code === 'receipt_invalid_base64' ||
+      error?.code === 'receipt_empty' ||
+      error?.code === 'receipt_unsupported_format'
+    ) {
       return res.status(400).json({ error: 'receipt_invalid' });
+    }
+    if (error?.code === 'receipt_unreadable') {
+      return res.status(422).json({ error: 'receipt_unreadable' });
     }
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
