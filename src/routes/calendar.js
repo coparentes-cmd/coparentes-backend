@@ -44,6 +44,7 @@ router.post('/schedules', requireParentRole, async (req, res, next) => {
     const schema = z.object({
       patternType: z.enum(['weekAlternating', 'everyOtherWeekend', 'customWeek']),
       startDate: z.string(),
+      endDate: z.string().nullable().optional(),
       weekA: weekPatternSchema.optional(),
       weekB: weekPatternSchema.optional(),
       handoverTime: z.string().max(20).nullable().optional(),
@@ -61,6 +62,9 @@ router.post('/schedules', requireParentRole, async (req, res, next) => {
   } catch (error) {
     if (error?.code === 'schedule_not_allowed') {
       return res.status(403).json({ error: 'schedule_not_allowed' });
+    }
+    if (error?.code === 'invalid_date_range') {
+      return res.status(400).json({ error: 'invalid_date_range' });
     }
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
@@ -129,6 +133,9 @@ router.post('/exceptions', requireParentRole, async (req, res, next) => {
   } catch (error) {
     if (error?.code === 'exception_not_allowed') {
       return res.status(403).json({ error: 'exception_not_allowed' });
+    }
+    if (error?.code === 'schedule_not_active') {
+      return res.status(409).json({ error: 'schedule_not_active' });
     }
     if (error?.code === 'invalid_date_range') {
       return res.status(400).json({ error: 'invalid_date_range' });
@@ -199,6 +206,9 @@ router.patch('/slots/:slotId', requireParentRole, async (req, res, next) => {
   } catch (error) {
     if (error?.code === 'slot_not_allowed') {
       return res.status(403).json({ error: 'slot_not_allowed' });
+    }
+    if (error?.code === 'schedule_locked') {
+      return res.status(409).json({ error: 'schedule_locked' });
     }
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });

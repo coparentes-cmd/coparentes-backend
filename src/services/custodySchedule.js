@@ -200,7 +200,9 @@ export async function getActiveOrPendingSchedule(workspaceId) {
 
 export async function generateSlotsFromSchedule(schedule, monthsAhead = GENERATION_MONTHS) {
   const start = utcDayStart(schedule.startDate);
-  const end = addUtcMonths(start, monthsAhead);
+  const end = schedule.endDate
+    ? addUtcDays(utcDayStart(schedule.endDate), 1)
+    : addUtcMonths(start, monthsAhead);
   const protectedSlots = await prisma.custodySlot.findMany({
     where: {
       workspaceId: schedule.workspaceId,
@@ -269,6 +271,7 @@ export async function proposeCustodySchedule({
   proposer,
   patternType,
   startDate,
+  endDate,
   weekA,
   weekB,
   handoverTime,
@@ -282,6 +285,13 @@ export async function proposeCustodySchedule({
 
   const resolved = resolveWeekPattern(patternType, weekA, weekB);
   const normalizedStart = utcDayStart(startDate);
+  const normalizedEnd = endDate ? utcDayStart(endDate) : null;
+
+  if (normalizedEnd && normalizedEnd < normalizedStart) {
+    const error = new Error('invalid_date_range');
+    error.code = 'invalid_date_range';
+    throw error;
+  }
 
   await prisma.custodySchedule.updateMany({
     where: {
@@ -296,6 +306,7 @@ export async function proposeCustodySchedule({
       workspaceId,
       patternType,
       startDate: normalizedStart,
+      endDate: normalizedEnd,
       weekAJson: JSON.stringify(resolved.weekA),
       weekBJson: JSON.stringify(resolved.weekB),
       handoverTime: handoverTime ?? null,
@@ -306,6 +317,9 @@ export async function proposeCustodySchedule({
   });
 
   const serialized = serializeCustodySchedule(schedule);
+  const rangeLabel = normalizedEnd
+    ? `${formatPlDate(normalizedStart)} – ${formatPlDate(normalizedEnd)}`
+    : `od ${formatPlDate(normalizedStart)}`;
   await notifyScheduleThread({
     workspaceId,
     sender: proposer,
@@ -313,7 +327,7 @@ export async function proposeCustodySchedule({
       'Propozycja grafiku opieki',
       '',
       `Szablon: ${patternLabel(patternType)}`,
-      `Start: ${formatPlDate(normalizedStart)}`,
+      `Obowiązuje: ${rangeLabel}`,
       handoverTime ? `Przekazanie: ${handoverTime}` : null,
       handoverLocation ? `Miejsce: ${handoverLocation}` : null,
       '',
@@ -453,6 +467,15 @@ export async function createCustodyException({
     throw error;
   }
 
+  const activeSchedule = await prisma.custodySchedule.findFirst({
+    where: { workspaceId, status: 'active' }
+  });
+  if (!activeSchedule) {
+    const error = new Error('schedule_not_active');
+    error.code = 'schedule_not_active';
+    throw error;
+  }
+
   const from = utcDayStart(fromDate);
   const to = utcDayStart(toDate ?? fromDate);
   if (to < from) {
@@ -582,6 +605,18 @@ export async function updateCustodySlotHandover({
   if (user.role !== 'parentA' && user.role !== 'parentB') {
     const error = new Error('slot_not_allowed');
     error.code = 'slot_not_allowed';
+    throw error;
+  }
+
+  const lockedSchedule = await prisma.custodySchedule.findFirst({
+    where: {
+      workspaceId,
+      status: { in: ['active', 'pendingApproval'] }
+    }
+  });
+  if (lockedSchedule) {
+    const error = new Error('schedule_locked');
+    error.code = 'schedule_locked';
     throw error;
   }
 
