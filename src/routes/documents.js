@@ -11,7 +11,7 @@ import {
 
 const router = express.Router();
 
-const MAX_DOCUMENT_BYTES = 512 * 1024;
+const MAX_DOCUMENT_BYTES = 5 * 1024 * 1024;
 
 function decodedBase64ByteLength(base64) {
   const normalized = base64.replace(/\s/g, '');
@@ -23,7 +23,7 @@ router.use(requireAuth);
 
 router.get('/', async (req, res, next) => {
   try {
-    const documents = await listDocuments(req.user.workspaceId);
+    const documents = await listDocuments(req.user.workspaceId, req.user.id);
     return res.json({ documents });
   } catch (error) {
     return next(error);
@@ -34,7 +34,8 @@ router.get('/:documentId/download', async (req, res, next) => {
   try {
     const payload = await getDocumentDownload(
       req.user.workspaceId,
-      req.params.documentId
+      req.params.documentId,
+      req.user.id
     );
 
     if (!payload) {
@@ -56,7 +57,7 @@ router.post('/', requireParentRole, async (req, res, next) => {
       fileName: z.string().trim().min(1).max(255).nullable().optional(),
       mimeType: z.string().trim().min(1).max(120).nullable().optional(),
       fileUrl: z.string().url().nullable().optional(),
-      contentBase64: z.string().max(900_000).nullable().optional()
+      contentBase64: z.string().max(7_500_000).nullable().optional()
     });
     const data = schema.parse(req.body);
 

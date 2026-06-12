@@ -5,16 +5,29 @@ const ALLOWED_CATEGORIES = new Set([
   'Agreements',
   'School',
   'Medical',
-  'Shared'
+  'Shared',
+  'Private'
 ]);
+
+export const PRIVATE_DOCUMENT_CATEGORY = 'Private';
+
+export function isPrivateDocument(document) {
+  return document.category === PRIVATE_DOCUMENT_CATEGORY;
+}
 
 export function isAllowedDocumentCategory(category) {
   return ALLOWED_CATEGORIES.has(category);
 }
 
-export async function listDocuments(workspaceId) {
+export async function listDocuments(workspaceId, userId) {
   const rows = await prisma.document.findMany({
-    where: { workspaceId },
+    where: {
+      workspaceId,
+      OR: [
+        { category: { not: PRIVATE_DOCUMENT_CATEGORY } },
+        { category: PRIVATE_DOCUMENT_CATEGORY, uploadedById: userId }
+      ]
+    },
     include: { child: true },
     orderBy: { updatedAt: 'desc' }
   });
@@ -71,13 +84,17 @@ export async function createDocument({
   return serializeDocument(row);
 }
 
-export async function getDocumentDownload(workspaceId, documentId) {
+export async function getDocumentDownload(workspaceId, documentId, userId) {
   const row = await prisma.document.findFirst({
     where: { id: documentId, workspaceId },
     include: { child: true }
   });
 
   if (!row) {
+    return null;
+  }
+
+  if (isPrivateDocument(row) && row.uploadedById !== userId) {
     return null;
   }
 
