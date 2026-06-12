@@ -60,6 +60,38 @@ enum SwapStatus {
   counterProposed
 }
 
+enum CustodySchedulePattern {
+  weekAlternating
+  everyOtherWeekend
+  customWeek
+}
+
+enum CustodyScheduleStatus {
+  draft
+  pendingApproval
+  active
+  superseded
+}
+
+enum CustodySlotSource {
+  schedule
+  exception
+  manual
+  swap
+}
+
+enum CustodyExceptionType {
+  singleDay
+  range
+  holiday
+}
+
+enum CustodyExceptionStatus {
+  pending
+  accepted
+  rejected
+}
+
 enum ExpenseStatus {
   pending
   accepted
@@ -81,6 +113,8 @@ model Workspace {
   messages   Message[]
   exportJobs ExportJob[]
   custodySlots  CustodySlot[]
+  custodySchedules CustodySchedule[]
+  custodyExceptions CustodyException[]
   calendarEvents CalendarEvent[]
   swapRequests   SwapRequest[]
   expenses       Expense[]
@@ -109,6 +143,8 @@ model User {
   exportJobs       ExportJob[]
   calendarEvents   CalendarEvent[] @relation("CalendarEventCreator")
   swapRequests     SwapRequest[]   @relation("SwapRequester")
+  custodySchedulesProposed CustodySchedule[] @relation("ScheduleProposer")
+  custodyExceptionsRequested CustodyException[] @relation("ExceptionRequester")
   expensesPaid     Expense[]       @relation("ExpensePayer")
   documentsUploaded Document[]     @relation("DocumentUploader")
 
@@ -257,17 +293,69 @@ model EmailInvite {
 }
 
 model CustodySlot {
-  id               String    @id @default(cuid())
+  id               String           @id @default(cuid())
   workspaceId      String
-  workspace        Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspace        Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   date             DateTime
   custodian        UserRole
   handoverLocation String?
   handoverTime     String?
-  createdAt        DateTime  @default(now())
+  source           CustodySlotSource @default(schedule)
+  scheduleId       String?
+  schedule         CustodySchedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  exceptionId      String?
+  createdAt        DateTime         @default(now())
 
+  @@unique([workspaceId, date])
   @@index([workspaceId])
   @@index([date])
+  @@index([scheduleId])
+}
+
+model CustodySchedule {
+  id               String                 @id @default(cuid())
+  workspaceId      String
+  workspace        Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  patternType      CustodySchedulePattern
+  startDate        DateTime
+  endDate          DateTime?
+  weekAJson        String                 @db.Text
+  weekBJson        String                 @db.Text
+  handoverTime     String?
+  handoverLocation String?
+  status           CustodyScheduleStatus  @default(pendingApproval)
+  proposedById     String
+  proposedBy       User                   @relation("ScheduleProposer", fields: [proposedById], references: [id])
+  approvedById     String?
+  approvedAt       DateTime?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  slots            CustodySlot[]
+
+  @@index([workspaceId])
+  @@index([status])
+}
+
+model CustodyException {
+  id            String                 @id @default(cuid())
+  workspaceId   String
+  workspace     Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  fromDate      DateTime
+  toDate        DateTime
+  custodian     UserRole
+  exceptionType CustodyExceptionType   @default(singleDay)
+  reason        String?
+  status        CustodyExceptionStatus @default(pending)
+  requesterId   String
+  requester     User                   @relation("ExceptionRequester", fields: [requesterId], references: [id])
+  responseNote  String?
+  createdAt     DateTime               @default(now())
+  updatedAt     DateTime               @updatedAt
+
+  @@index([workspaceId])
+  @@index([status])
+  @@index([fromDate])
 }
 
 model CalendarEvent {

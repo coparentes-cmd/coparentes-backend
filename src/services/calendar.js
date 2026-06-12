@@ -3,6 +3,11 @@ import {
   addMessageToThread,
   getOrCreateCategoryThread
 } from './threads.js';
+import {
+  getActiveOrPendingSchedule,
+  serializeCustodyException,
+  serializeCustodySchedule
+} from './custodySchedule.js';
 
 const SWAP_MESSAGING_CATEGORY = 'Zmiana grafiku';
 
@@ -135,11 +140,11 @@ async function applyAcceptedSwapToCalendar({
   await prisma.$transaction([
     prisma.custodySlot.update({
       where: { id: slotOriginal.id },
-      data: { custodian: proposedCustodian }
+      data: { custodian: proposedCustodian, source: 'swap' }
     }),
     prisma.custodySlot.update({
       where: { id: slotProposed.id },
-      data: { custodian: originalCustodian }
+      data: { custodian: originalCustodian, source: 'swap' }
     })
   ]);
 }
@@ -150,7 +155,8 @@ export function serializeCustodySlot(slot) {
     date: slot.date.toISOString(),
     custodian: slot.custodian,
     handoverLocation: slot.handoverLocation,
-    handoverTime: slot.handoverTime
+    handoverTime: slot.handoverTime,
+    source: slot.source ?? 'schedule'
   };
 }
 
@@ -251,7 +257,8 @@ export async function listCalendarExportItems(workspaceId, fromDate, toDate) {
 }
 
 export async function getCalendarSnapshot(workspaceId) {
-  const [custodySlots, events, swapRequests] = await Promise.all([
+  const [custodySlots, events, swapRequests, custodySchedule, custodyExceptions] =
+    await Promise.all([
     prisma.custodySlot.findMany({
       where: { workspaceId },
       orderBy: { date: 'asc' }
@@ -263,13 +270,22 @@ export async function getCalendarSnapshot(workspaceId) {
     prisma.swapRequest.findMany({
       where: { workspaceId },
       orderBy: { createdAt: 'desc' }
+    }),
+    getActiveOrPendingSchedule(workspaceId),
+    prisma.custodyException.findMany({
+      where: { workspaceId },
+      orderBy: { createdAt: 'desc' }
     })
   ]);
 
   return {
     custodySlots: custodySlots.map(serializeCustodySlot),
     events: events.map(serializeCalendarEvent),
-    swapRequests: swapRequests.map(serializeSwapRequest)
+    swapRequests: swapRequests.map(serializeSwapRequest),
+    custodySchedule: custodySchedule
+      ? serializeCustodySchedule(custodySchedule)
+      : null,
+    custodyExceptions: custodyExceptions.map(serializeCustodyException)
   };
 }
 
