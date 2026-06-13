@@ -7,7 +7,9 @@ import { requireAuth } from '../middleware/auth.js';
 import {
   buildAuthPayload,
   createWorkspace,
-  findWorkspaceByInviteCode
+  findWorkspaceByChildInviteCode,
+  findWorkspaceByInviteCode,
+  getChildJoinPreview
 } from '../services/workspace.js';
 import { createSessionForUser, deleteAllSessionsForUser, deleteSession } from '../services/session.js';
 
@@ -28,11 +30,21 @@ const registerSchema = z.object({
   workspaceName: z.string().min(2)
 });
 
-const joinSchema = z.object({
-  inviteCode: z.string().min(6),
-  name: z.string().min(2),
-  email: z.string().trim().toLowerCase().email(),
-  password: z.string().min(10)
+const joinSchema = z
+  .object({
+    inviteCode: z.string().min(6).optional(),
+    childInviteCode: z.string().min(6).optional(),
+    name: z.string().min(2),
+    email: z.string().trim().toLowerCase().email(),
+    password: z.string().min(10),
+    childProfileId: z.string().optional()
+  })
+  .refine((data) => data.inviteCode || data.childInviteCode, {
+    message: 'invite_code_required'
+  });
+
+const childJoinPreviewSchema = z.object({
+  childInviteCode: z.string().min(6)
 });
 
 const loginSchema = z.object({
@@ -88,6 +100,26 @@ router.post('/register', authActionLimiter, async (req, res, next) => {
   }
 });
 
+router.get('/join-preview', authActionLimiter, async (req, res, next) => {
+  try {
+    const data = childJoinPreviewSchema.parse({
+      childInviteCode: req.query.childInviteCode
+    });
+
+    const preview = await getChildJoinPreview(data.childInviteCode);
+    if (!preview) {
+      return res.status(404).json({ error: 'workspace_not_found' });
+    }
+
+    return res.json(preview);
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
 router.post('/join', authActionLimiter, async (req, res, next) => {
   try {
     const data = joinSchema.parse(req.body);
@@ -99,9 +131,32 @@ router.post('/join', authActionLimiter, async (req, res, next) => {
       return res.status(409).json({ error: 'email_in_use' });
     }
 
-    const workspace = await findWorkspaceByInviteCode(data.inviteCode);
+    const isChildJoin = Boolean(data.childInviteCode);
+    const workspace = isChildJoin
+      ? await findWorkspaceByChildInviteCode(data.childInviteCode)
+      : await findWorkspaceByInviteCode(data.inviteCode);
+
     if (!workspace) {
       return res.status(404).json({ error: 'workspace_not_found' });
+    }
+
+    if (isChildJoin) {
+      if (!data.childProfileId) {
+        return res.status(400).json({ error: 'child_profile_required' });
+      }
+
+      const childProfile = await prisma.child.findFirst({
+        where: { id: data.childProfileId, workspaceId: workspace.id },
+        include: { linkedAccount: true }
+      });
+
+      if (!childProfile) {
+        return res.status(400).json({ error: 'child_not_found' });
+      }
+
+      if (childProfile.linkedAccount) {
+        return res.status(409).json({ error: 'child_profile_taken' });
+      }
     }
 
     const passwordHash = await bcrypt.hash(data.password, 12);
@@ -111,7 +166,8 @@ router.post('/join', authActionLimiter, async (req, res, next) => {
         name: data.name,
         email: data.email,
         passwordHash,
-        role: 'parentB',
+        role: isChildJoin ? 'child' : 'parentB',
+        childProfileId: isChildJoin ? data.childProfileId : null,
         twoFactorEnabled: false,
         highConflictMode: false
       }

@@ -94,7 +94,8 @@ export async function seedDemoData(options = {}) {
     data: {
       id: 'ws_kowalscy',
       name: 'Rodzina Kowalska',
-      inviteCode: 'KOWALSCY2026'
+      inviteCode: 'KOWALSCY2026',
+      childInviteCode: 'DZIECIKOWAL2026'
     }
   });
 
@@ -144,17 +145,6 @@ export async function seedDemoData(options = {}) {
     }
   });
 
-  const threadSchool = await prisma.thread.create({
-    data: {
-      id: 'thread_school_1',
-      workspaceId: workspace.id,
-      subject: 'Angielski czwartek 17:00',
-      category: 'Szkoła',
-      childId: child.id,
-      createdById: parentA.id
-    }
-  });
-
   const threadHealth = await prisma.thread.create({
     data: {
       id: 'thread_health_1',
@@ -162,7 +152,32 @@ export async function seedDemoData(options = {}) {
       subject: 'Wizyta u dentysty',
       category: 'Zdrowie',
       childId: child.id,
-      createdById: parentA.id
+      createdById: parentA.id,
+      audience: 'parents'
+    }
+  });
+
+  await prisma.thread.create({
+    data: {
+      id: 'thread_family_1',
+      workspaceId: workspace.id,
+      subject: 'Rodzina',
+      category: 'Rodzina',
+      childId: null,
+      createdById: parentA.id,
+      audience: 'family'
+    }
+  });
+
+  const threadSchool = await prisma.thread.create({
+    data: {
+      id: 'thread_school_1',
+      workspaceId: workspace.id,
+      subject: 'Angielski czwartek 17:00',
+      category: 'Szkoła',
+      childId: child.id,
+      createdById: parentA.id,
+      audience: 'parents'
     }
   });
 

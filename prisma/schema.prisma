@@ -99,13 +99,19 @@ enum ExpenseStatus {
   settled
 }
 
+enum ThreadAudience {
+  parents
+  family
+}
+
 /// Przestrzeń współrodzicielska (rodzina). inviteCode = kod zaproszenia dla parentB / child / observer.
 model Workspace {
-  id         String   @id @default(cuid())
-  name       String
-  inviteCode String   @unique
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id              String   @id @default(cuid())
+  name            String
+  inviteCode      String   @unique
+  childInviteCode String   @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   users      User[]
   children   Child[]
@@ -121,6 +127,7 @@ model Workspace {
   documents      Document[]
 
   @@index([inviteCode])
+  @@index([childInviteCode])
 }
 
 model User {
@@ -147,6 +154,8 @@ model User {
   custodyExceptionsRequested CustodyException[] @relation("ExceptionRequester")
   expensesPaid     Expense[]       @relation("ExpensePayer")
   documentsUploaded Document[]     @relation("DocumentUploader")
+  childProfileId    String?          @unique
+  childProfile      Child?           @relation("ChildLinkedAccount", fields: [childProfileId], references: [id], onDelete: SetNull)
 
   @@index([email])
   @@index([workspaceId])
@@ -166,6 +175,7 @@ model Child {
   calendarEvents CalendarEvent[]
   expenses       Expense[]
   documents      Document[]
+  linkedAccount  User?      @relation("ChildLinkedAccount")
 
   @@index([workspaceId])
 }
@@ -216,14 +226,16 @@ model Thread {
   child        Child?    @relation(fields: [childId], references: [id], onDelete: SetNull)
   createdById  String
   createdBy    User      @relation("ThreadCreator", fields: [createdById], references: [id])
-  createdAt    DateTime  @default(now())
-  lastActivity DateTime  @default(now())
+  createdAt    DateTime       @default(now())
+  lastActivity DateTime       @default(now())
+  audience     ThreadAudience @default(parents)
 
   messages   Message[]
   exportJobs ExportJob[]
 
   @@index([workspaceId])
   @@index([lastActivity])
+  @@index([audience])
 }
 
 model Message {

@@ -9,6 +9,7 @@ export function serializeUser(user) {
     name: user.name,
     email: user.email,
     role: user.role,
+    childProfileId: user.childProfileId ?? null,
     twoFactorEnabled: user.twoFactorEnabled,
     highConflictMode: user.highConflictMode,
     createdAt: user.createdAt.toISOString()
@@ -56,6 +57,7 @@ export function serializeThread(thread, messages, viewerUserId = null) {
     subject: thread.subject,
     category: thread.category,
     childId: thread.childId,
+    audience: thread.audience ?? 'parents',
     lastActivity: thread.lastActivity.toISOString(),
     hasUnread,
     messages: messages.map(serializeMessage)

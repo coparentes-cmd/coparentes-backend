@@ -4,21 +4,31 @@ import { serializeChild, serializeUser } from './serializers.js';
 
 export async function createWorkspace({ name, client = prisma }) {
   let inviteCode = createInviteCode();
+  let childInviteCode = createInviteCode();
   let attempts = 0;
 
   while (attempts < 5) {
-    const existing = await client.workspace.findUnique({ where: { inviteCode } });
-    if (!existing) {
+    const existingInvite = await client.workspace.findUnique({ where: { inviteCode } });
+    const existingChildInvite = await client.workspace.findUnique({
+      where: { childInviteCode }
+    });
+    if (!existingInvite && !existingChildInvite) {
       break;
     }
-    inviteCode = createInviteCode();
+    if (existingInvite) {
+      inviteCode = createInviteCode();
+    }
+    if (existingChildInvite) {
+      childInviteCode = createInviteCode();
+    }
     attempts += 1;
   }
 
   return client.workspace.create({
     data: {
       name,
-      inviteCode
+      inviteCode,
+      childInviteCode
     }
   });
 }
@@ -27,6 +37,38 @@ export async function findWorkspaceByInviteCode(inviteCode) {
   return prisma.workspace.findUnique({
     where: { inviteCode: inviteCode.trim().toUpperCase() }
   });
+}
+
+export async function findWorkspaceByChildInviteCode(childInviteCode) {
+  return prisma.workspace.findUnique({
+    where: { childInviteCode: childInviteCode.trim().toUpperCase() }
+  });
+}
+
+export async function getChildJoinPreview(childInviteCode) {
+  const workspace = await findWorkspaceByChildInviteCode(childInviteCode);
+  if (!workspace) {
+    return null;
+  }
+
+  const children = await prisma.child.findMany({
+    where: { workspaceId: workspace.id },
+    orderBy: { name: 'asc' },
+    select: {
+      id: true,
+      name: true,
+      linkedAccount: { select: { id: true } }
+    }
+  });
+
+  return {
+    workspaceName: workspace.name,
+    children: children.map((child) => ({
+      id: child.id,
+      name: child.name,
+      hasAccount: child.linkedAccount != null
+    }))
+  };
 }
 
 export async function createChild({
@@ -64,6 +106,7 @@ export async function getWorkspaceGraph(workspaceId) {
     id: workspace.id,
     name: workspace.name,
     inviteCode: workspace.inviteCode,
+    childInviteCode: workspace.childInviteCode,
     createdAt: workspace.createdAt.toISOString(),
     members: workspace.users.map(serializeUser),
     children: workspace.children.map(serializeChild)

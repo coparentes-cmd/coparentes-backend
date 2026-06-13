@@ -23,7 +23,8 @@ function uniqueEmails() {
   const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   return {
     parentA: `e2e-parent-a-${id}@test.coparentes.app`,
-    parentB: `e2e-parent-b-${id}@test.coparentes.app`
+    parentB: `e2e-parent-b-${id}@test.coparentes.app`,
+    child: `e2e-child-${id}@test.coparentes.app`
   };
 }
 
@@ -90,10 +91,11 @@ describe('E2E flow (register → join → thread → message → export → down
   it('full co-parenting API journey', async (t) => {
     if (!e2eReady) {
       t.skip('Set RUN_E2E=true (and DATABASE_URL + npm run db:migrate)');
+      return;
     }
 
     const emails = uniqueEmails();
-    testEmails.push(emails.parentA, emails.parentB);
+    testEmails.push(emails.parentA, emails.parentB, emails.child);
 
     // 1. Register workspace (parentA) — Flutter: registerWorkspace
     const register = await request(server, 'POST', '/api/auth/register', {
@@ -107,6 +109,8 @@ describe('E2E flow (register → join → thread → message → export → down
     assert.equal(register.status, 201, `register failed: ${JSON.stringify(register.json)}`);
     assertAuthSession(register.json, 'parentA');
     const inviteCode = register.json.workspace.inviteCode;
+    const childInviteCode = register.json.workspace.childInviteCode;
+    assert.ok(childInviteCode, 'workspace.childInviteCode required');
     testWorkspaceId = register.json.workspace.id;
     const tokenA = register.json.token;
 
@@ -127,10 +131,22 @@ describe('E2E flow (register → join → thread → message → export → down
     assert.ok(addChild.json.id);
     assert.equal(addChild.json.name, 'E2E Zosia Test');
     assert.equal(addChild.json.school, 'SP E2E');
+    const childZosiaId = addChild.json.id;
+
+    const addChild2 = await request(server, 'POST', '/api/workspace/children', {
+      token: tokenA,
+      body: {
+        name: 'E2E Tomek Test',
+        dateOfBirth: '2013-09-07T00:00:00.000Z',
+        school: 'SP E2E'
+      }
+    });
+    assert.equal(addChild2.status, 201);
+    assert.equal(addChild2.json.name, 'E2E Tomek Test');
 
     const forbiddenChild = await request(server, 'POST', '/api/workspace/children', {
       token: tokenA,
-      body: { name: 'X', dateOfBirth: '2030-01-01T00:00:00.000Z' }
+      body: { name: 'Future Kid', dateOfBirth: '2030-01-01T00:00:00.000Z' }
     });
     assert.equal(forbiddenChild.status, 400);
     assert.equal(forbiddenChild.json.error, 'invalid_date_of_birth');
@@ -235,8 +251,8 @@ describe('E2E flow (register → join → thread → message → export → down
     const threadForA = listAsA.json.threads.find((t) => t.id === threadId);
     assert.equal(
       threadForA.hasUnread,
-      false,
-      'parentA should not count own message as unread'
+      true,
+      'parentA should still have unread message from parentB (own message is excluded from unread count)'
     );
 
     const markRead = await request(server, 'POST', `/api/threads/${threadId}/read`, {
@@ -276,6 +292,81 @@ describe('E2E flow (register → join → thread → message → export → down
       listThreads.json.threads.some((t) => t.id === threadId),
       'created thread visible in list'
     );
+
+    const financeChannel = await request(server, 'POST', '/api/threads/channel', {
+      token: tokenA,
+      body: { category: 'Finansowe' }
+    });
+    assert.equal(financeChannel.status, 200);
+    assert.equal(financeChannel.json.audience, 'parents');
+
+    const joinPreview = await request(
+      server,
+      'GET',
+      `/api/auth/join-preview?childInviteCode=${encodeURIComponent(childInviteCode)}`
+    );
+    assert.equal(joinPreview.status, 200);
+    assert.ok(joinPreview.json.children.length >= 2);
+
+    const joinChild = await request(server, 'POST', '/api/auth/join', {
+      body: {
+        name: 'E2E Zosia Child',
+        email: emails.child,
+        password: PASSWORD,
+        childInviteCode,
+        childProfileId: childZosiaId,
+        role: 'child'
+      }
+    });
+    assert.equal(joinChild.status, 201, `joinChild failed: ${JSON.stringify(joinChild.json)}`);
+    assertAuthSession(joinChild.json, 'child');
+    const tokenChild = joinChild.json.token;
+
+    const listAsChild = await request(server, 'GET', '/api/threads', {
+      token: tokenChild
+    });
+    assert.equal(listAsChild.status, 200);
+    assert.ok(
+      listAsChild.json.threads.every((t) => t.audience === 'family'),
+      'child should only see family threads'
+    );
+    assert.ok(
+      listAsChild.json.threads.some((t) => t.category === 'Rodzina'),
+      'child should see Rodzina channel'
+    );
+    assert.ok(
+      !listAsChild.json.threads.some((t) => t.id === threadId),
+      'child must not see parent custom thread'
+    );
+    assert.ok(
+      !listAsChild.json.threads.some((t) => t.id === financeChannel.json.id),
+      'child must not see Finansowe channel'
+    );
+
+    const forbiddenThread = await request(server, 'GET', `/api/threads/${threadId}`, {
+      token: tokenChild
+    });
+    assert.equal(forbiddenThread.status, 404);
+
+    const familyThread = listAsChild.json.threads.find((t) => t.category === 'Rodzina');
+    assert.ok(familyThread, 'family thread required');
+
+    const childMessage = await request(
+      server,
+      'POST',
+      `/api/threads/${familyThread.id}/messages`,
+      {
+        token: tokenChild,
+        body: { content: 'Cześć rodzice!', tone: 'neutral' }
+      }
+    );
+    assert.equal(childMessage.status, 201);
+    assert.equal(childMessage.json.messages.at(-1).content, 'Cześć rodzice!');
+
+    const calendarAsChild = await request(server, 'GET', '/api/calendar', {
+      token: tokenChild
+    });
+    assert.equal(calendarAsChild.status, 200);
 
     // 6. Create export — Flutter: createExport
     const now = new Date().toISOString();

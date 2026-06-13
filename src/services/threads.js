@@ -15,9 +15,45 @@ export const CATEGORY_CHANNELS = [
   'Inne'
 ];
 
-export async function listThreads(workspaceId, viewerUserId) {
+export const FAMILY_CATEGORY = 'Rodzina';
+
+function threadWhereForRole(userRole) {
+  if (userRole === 'child') {
+    return { audience: 'family' };
+  }
+  return {};
+}
+
+export function canUserAccessThread(userRole, thread) {
+  if (!thread) {
+    return false;
+  }
+  if (userRole === 'child') {
+    return thread.audience === 'family';
+  }
+  return true;
+}
+
+export function canUserSendMessage(userRole, thread) {
+  if (!canUserAccessThread(userRole, thread)) {
+    return false;
+  }
+  if (userRole === 'child') {
+    return thread.audience === 'family';
+  }
+  return userRole === 'parentA' || userRole === 'parentB';
+}
+
+export async function listThreads(workspaceId, viewerUserId, userRole = 'parentA') {
+  if (userRole === 'parentA' || userRole === 'parentB' || userRole === 'child') {
+    await getOrCreateFamilyThread({ workspaceId, createdById: viewerUserId });
+  }
+
   const threads = await prisma.thread.findMany({
-    where: { workspaceId },
+    where: {
+      workspaceId,
+      ...threadWhereForRole(userRole)
+    },
     orderBy: { lastActivity: 'desc' },
     include: {
       messages: { orderBy: { sentAt: 'asc' } }
@@ -29,7 +65,12 @@ export async function listThreads(workspaceId, viewerUserId) {
   );
 }
 
-export async function getThreadById(workspaceId, threadId, viewerUserId) {
+export async function getThreadById(
+  workspaceId,
+  threadId,
+  viewerUserId,
+  userRole = 'parentA'
+) {
   const thread = await prisma.thread.findFirst({
     where: { id: threadId, workspaceId },
     include: {
@@ -37,11 +78,41 @@ export async function getThreadById(workspaceId, threadId, viewerUserId) {
     }
   });
 
-  if (!thread) {
+  if (!thread || !canUserAccessThread(userRole, thread)) {
     return null;
   }
 
   return serializeThread(thread, thread.messages, viewerUserId);
+}
+
+export async function getOrCreateFamilyThread({ workspaceId, createdById }) {
+  const existing = await prisma.thread.findFirst({
+    where: {
+      workspaceId,
+      category: FAMILY_CATEGORY,
+      subject: FAMILY_CATEGORY,
+      audience: 'family'
+    },
+    orderBy: { createdAt: 'asc' }
+  });
+
+  if (existing) {
+    return getThreadById(workspaceId, existing.id, createdById, 'parentA');
+  }
+
+  const thread = await prisma.thread.create({
+    data: {
+      workspaceId,
+      subject: FAMILY_CATEGORY,
+      category: FAMILY_CATEGORY,
+      childId: null,
+      createdById,
+      audience: 'family',
+      lastActivity: new Date()
+    }
+  });
+
+  return getThreadById(workspaceId, thread.id, createdById, 'parentA');
 }
 
 export async function createThread({
@@ -51,6 +122,13 @@ export async function createThread({
   category,
   childId
 }) {
+  if (subject === category && category === FAMILY_CATEGORY) {
+    return getOrCreateFamilyThread({
+      workspaceId,
+      createdById: createdBy.id
+    });
+  }
+
   if (subject === category && CATEGORY_CHANNELS.includes(category)) {
     return getOrCreateCategoryThread({ workspaceId, createdBy, category });
   }
@@ -73,11 +151,12 @@ export async function createThread({
       category,
       childId: childId ?? null,
       createdById: createdBy.id,
+      audience: 'parents',
       lastActivity: new Date()
     }
   });
 
-  return getThreadById(workspaceId, thread.id, createdBy.id);
+  return getThreadById(workspaceId, thread.id, createdBy.id, createdBy.role);
 }
 
 export async function getOrCreateCategoryThread({
@@ -92,12 +171,12 @@ export async function getOrCreateCategoryThread({
   }
 
   const existing = await prisma.thread.findFirst({
-    where: { workspaceId, category, subject: category },
+    where: { workspaceId, category, subject: category, audience: 'parents' },
     orderBy: { createdAt: 'asc' }
   });
 
   if (existing) {
-    return getThreadById(workspaceId, existing.id, createdBy.id);
+    return getThreadById(workspaceId, existing.id, createdBy.id, createdBy.role);
   }
 
   const thread = await prisma.thread.create({
@@ -107,19 +186,25 @@ export async function getOrCreateCategoryThread({
       category,
       childId: null,
       createdById: createdBy.id,
+      audience: 'parents',
       lastActivity: new Date()
     }
   });
 
-  return getThreadById(workspaceId, thread.id, createdBy.id);
+  return getThreadById(workspaceId, thread.id, createdBy.id, createdBy.role);
 }
 
-export async function markThreadAsRead({ workspaceId, threadId, userId }) {
+export async function markThreadAsRead({
+  workspaceId,
+  threadId,
+  userId,
+  userRole = 'parentA'
+}) {
   const thread = await prisma.thread.findFirst({
     where: { id: threadId, workspaceId }
   });
 
-  if (!thread) {
+  if (!thread || !canUserAccessThread(userRole, thread)) {
     return null;
   }
 
@@ -133,7 +218,7 @@ export async function markThreadAsRead({ workspaceId, threadId, userId }) {
     data: { isRead: true }
   });
 
-  return getThreadById(workspaceId, threadId, userId);
+  return getThreadById(workspaceId, threadId, userId, userRole);
 }
 
 export async function addMessageToThread({
@@ -148,7 +233,7 @@ export async function addMessageToThread({
     where: { id: threadId, workspaceId }
   });
 
-  if (!thread) {
+  if (!thread || !canUserSendMessage(sender.role, thread)) {
     return null;
   }
 
@@ -195,15 +280,24 @@ export async function addMessageToThread({
     })
   ]);
 
-  return getThreadById(workspaceId, thread.id, sender.id);
+  return getThreadById(workspaceId, thread.id, sender.id, sender.role);
 }
 
 export async function getMessageAttachmentDownload({
   workspaceId,
   threadId,
   messageId,
-  attachmentId
+  attachmentId,
+  userRole = 'parentA'
 }) {
+  const thread = await prisma.thread.findFirst({
+    where: { id: threadId, workspaceId }
+  });
+
+  if (!thread || !canUserAccessThread(userRole, thread)) {
+    return null;
+  }
+
   const message = await prisma.message.findFirst({
     where: {
       id: messageId,

@@ -1,12 +1,13 @@
 import express from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
-import { requireParentRole } from '../middleware/rbac.js';
+import { requireParentRole, requireParentOrChildMessage } from '../middleware/rbac.js';
 import {
   addMessageToThread,
   createThread,
   getMessageAttachmentDownload,
   getOrCreateCategoryThread,
+  getOrCreateFamilyThread,
   getThreadById,
   listThreads,
   markThreadAsRead
@@ -18,7 +19,11 @@ router.use(requireAuth);
 
 router.get('/', async (req, res, next) => {
   try {
-    const threads = await listThreads(req.user.workspaceId, req.user.id);
+    const threads = await listThreads(
+      req.user.workspaceId,
+      req.user.id,
+      req.user.role
+    );
     return res.json({ threads });
   } catch (error) {
     return next(error);
@@ -62,16 +67,23 @@ router.post('/channel', requireParentRole, async (req, res, next) => {
         'Zdrowie',
         'Finansowe',
         'Zmiana grafiku',
-        'Inne'
+        'Inne',
+        'Rodzina'
       ])
     });
     const data = schema.parse(req.body);
 
-    const thread = await getOrCreateCategoryThread({
-      workspaceId: req.user.workspaceId,
-      createdBy: req.user,
-      category: data.category
-    });
+    const thread =
+      data.category === 'Rodzina'
+        ? await getOrCreateFamilyThread({
+            workspaceId: req.user.workspaceId,
+            createdById: req.user.id
+          })
+        : await getOrCreateCategoryThread({
+            workspaceId: req.user.workspaceId,
+            createdBy: req.user,
+            category: data.category
+          });
 
     return res.json(thread);
   } catch (error) {
@@ -101,7 +113,8 @@ router.get(
         workspaceId: req.user.workspaceId,
         threadId: req.params.threadId,
         messageId: req.params.messageId,
-        attachmentId: req.params.attachmentId
+        attachmentId: req.params.attachmentId,
+        userRole: req.user.role
       });
 
       if (!attachment) {
@@ -115,8 +128,7 @@ router.get(
   }
 );
 
-// Bardziej specyficzna ścieżka przed /:threadId (Flutter: sendMessage)
-router.post('/:threadId/messages', requireParentRole, async (req, res, next) => {
+router.post('/:threadId/messages', requireParentOrChildMessage, async (req, res, next) => {
   try {
     const schema = z.object({
       content: z.string().max(4000),
@@ -139,7 +151,7 @@ router.post('/:threadId/messages', requireParentRole, async (req, res, next) => 
     });
 
     if (!thread) {
-      return res.status(404).json({ error: 'thread_not_found' });
+      return res.status(403).json({ error: 'forbidden' });
     }
 
     return res.status(201).json(thread);
@@ -165,7 +177,8 @@ router.get('/:threadId', async (req, res, next) => {
     const thread = await getThreadById(
       req.user.workspaceId,
       req.params.threadId,
-      req.user.id
+      req.user.id,
+      req.user.role
     );
     if (!thread) {
       return res.status(404).json({ error: 'thread_not_found' });
@@ -181,7 +194,8 @@ router.post('/:threadId/read', async (req, res, next) => {
     const thread = await markThreadAsRead({
       workspaceId: req.user.workspaceId,
       threadId: req.params.threadId,
-      userId: req.user.id
+      userId: req.user.id,
+      userRole: req.user.role
     });
 
     if (!thread) {
