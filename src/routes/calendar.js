@@ -6,7 +6,8 @@ import {
   createCalendarEvent,
   createSwapRequest,
   getCalendarSnapshot,
-  respondToSwapRequest
+  respondToSwapRequest,
+  updateCalendarEvent
 } from '../services/calendar.js';
 import {
   createCustodyException,
@@ -238,6 +239,40 @@ router.post('/events', requireParentRole, async (req, res, next) => {
 
     return res.status(201).json(event);
   } catch (error) {
+    if (error?.code === 'child_not_found') {
+      return res.status(400).json({ error: 'child_not_found' });
+    }
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
+router.patch('/events/:eventId', requireParentRole, async (req, res, next) => {
+  try {
+    const schema = z.object({
+      title: z.string().min(1),
+      description: z.string().max(2000).nullable().optional(),
+      startDate: z.string().datetime(),
+      endDate: z.string().datetime().nullable().optional(),
+      type: z.enum(['school', 'medical', 'activity', 'handover', 'holiday', 'other']),
+      childId: z.string().nullable().optional(),
+      location: z.string().max(500).nullable().optional()
+    });
+    const data = schema.parse(req.body);
+
+    const event = await updateCalendarEvent({
+      workspaceId: req.user.workspaceId,
+      eventId: req.params.eventId,
+      ...data
+    });
+
+    return res.json(event);
+  } catch (error) {
+    if (error?.code === 'event_not_found') {
+      return res.status(404).json({ error: 'event_not_found' });
+    }
     if (error?.code === 'child_not_found') {
       return res.status(400).json({ error: 'child_not_found' });
     }

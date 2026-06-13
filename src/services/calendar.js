@@ -384,6 +384,53 @@ export async function createCalendarEvent({
   return serializeCalendarEvent(row);
 }
 
+export async function updateCalendarEvent({
+  workspaceId,
+  eventId,
+  title,
+  description,
+  startDate,
+  endDate,
+  type,
+  childId,
+  location
+}) {
+  const existing = await prisma.calendarEvent.findFirst({
+    where: { id: eventId, workspaceId }
+  });
+  if (!existing) {
+    const error = new Error('event_not_found');
+    error.code = 'event_not_found';
+    throw error;
+  }
+
+  if (childId) {
+    const child = await prisma.child.findFirst({
+      where: { id: childId, workspaceId }
+    });
+    if (!child) {
+      const error = new Error('child_not_found');
+      error.code = 'child_not_found';
+      throw error;
+    }
+  }
+
+  const row = await prisma.calendarEvent.update({
+    where: { id: eventId },
+    data: {
+      title,
+      description: description ?? null,
+      startDate: new Date(startDate),
+      endDate: endDate ? new Date(endDate) : null,
+      type,
+      childId: childId ?? null,
+      location: location ?? null
+    }
+  });
+
+  return serializeCalendarEvent(row);
+}
+
 export async function createSwapRequest({
   workspaceId,
   requester,
