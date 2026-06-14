@@ -23,8 +23,7 @@ function uniqueEmails() {
   const id = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   return {
     parentA: `e2e-parent-a-${id}@test.coparentes.app`,
-    parentB: `e2e-parent-b-${id}@test.coparentes.app`,
-    child: `e2e-child-${id}@test.coparentes.app`
+    parentB: `e2e-parent-b-${id}@test.coparentes.app`
   };
 }
 
@@ -95,7 +94,7 @@ describe('E2E flow (register → join → thread → message → export → down
     }
 
     const emails = uniqueEmails();
-    testEmails.push(emails.parentA, emails.parentB, emails.child);
+    testEmails.push(emails.parentA, emails.parentB);
 
     // 1. Register workspace (parentA) — Flutter: registerWorkspace
     const register = await request(server, 'POST', '/api/auth/register', {
@@ -131,7 +130,6 @@ describe('E2E flow (register → join → thread → message → export → down
     assert.ok(addChild.json.id);
     assert.equal(addChild.json.name, 'E2E Zosia Test');
     assert.equal(addChild.json.school, 'SP E2E');
-    const childZosiaId = addChild.json.id;
 
     const addChild2 = await request(server, 'POST', '/api/workspace/children', {
       token: tokenA,
@@ -308,19 +306,27 @@ describe('E2E flow (register → join → thread → message → export → down
     assert.equal(joinPreview.status, 200);
     assert.ok(joinPreview.json.children.length >= 2);
 
-    const joinChild = await request(server, 'POST', '/api/auth/join', {
+    const joinChild = await request(server, 'POST', '/api/auth/child/access', {
       body: {
         name: 'E2E Zosia Child',
-        email: emails.child,
         password: PASSWORD,
         childInviteCode,
-        childProfileId: childZosiaId,
-        role: 'child'
+        dateOfBirth: '2016-05-12T00:00:00.000Z'
       }
     });
     assert.equal(joinChild.status, 201, `joinChild failed: ${JSON.stringify(joinChild.json)}`);
     assertAuthSession(joinChild.json, 'child');
     const tokenChild = joinChild.json.token;
+
+    const loginChild = await request(server, 'POST', '/api/auth/child/access', {
+      body: {
+        password: PASSWORD,
+        childInviteCode,
+        dateOfBirth: '2016-05-12T00:00:00.000Z'
+      }
+    });
+    assert.equal(loginChild.status, 200, `loginChild failed: ${JSON.stringify(loginChild.json)}`);
+    assertAuthSession(loginChild.json, 'child');
 
     const listAsChild = await request(server, 'GET', '/api/threads', {
       token: tokenChild

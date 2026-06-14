@@ -47,6 +47,42 @@ const childJoinPreviewSchema = z.object({
   childInviteCode: z.string().min(6)
 });
 
+const childAccessSchema = z.object({
+  childInviteCode: z.string().min(6),
+  dateOfBirth: z.string().datetime(),
+  password: z.string().min(10),
+  name: z.string().trim().min(2).optional()
+});
+
+function parseDateOfBirth(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  return date;
+}
+
+function isSameCalendarDay(left, right) {
+  return (
+    left.getUTCFullYear() === right.getUTCFullYear() &&
+    left.getUTCMonth() === right.getUTCMonth() &&
+    left.getUTCDate() === right.getUTCDate()
+  );
+}
+
+function childAccountEmail(childProfileId) {
+  return `child+${childProfileId}@accounts.coparentes.internal`;
+}
+
+async function findChildByDateOfBirth(workspaceId, dateOfBirth) {
+  const children = await prisma.child.findMany({
+    where: { workspaceId },
+    include: { linkedAccount: true }
+  });
+
+  return children.filter((child) => isSameCalendarDay(child.dateOfBirth, dateOfBirth));
+}
+
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(8)
@@ -112,6 +148,72 @@ router.get('/join-preview', authActionLimiter, async (req, res, next) => {
     }
 
     return res.json(preview);
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
+router.post('/child/access', authActionLimiter, async (req, res, next) => {
+  try {
+    const data = childAccessSchema.parse(req.body);
+    const workspace = await findWorkspaceByChildInviteCode(data.childInviteCode);
+
+    if (!workspace) {
+      return res.status(404).json({ error: 'workspace_not_found' });
+    }
+
+    const dateOfBirth = parseDateOfBirth(data.dateOfBirth);
+    if (!dateOfBirth) {
+      return res.status(400).json({ error: 'invalid_date_of_birth' });
+    }
+
+    const matches = await findChildByDateOfBirth(workspace.id, dateOfBirth);
+    if (matches.length === 0) {
+      return res.status(404).json({ error: 'child_not_found' });
+    }
+    if (matches.length > 1) {
+      return res.status(409).json({ error: 'ambiguous_child_profile' });
+    }
+
+    const childProfile = matches[0];
+
+    if (childProfile.linkedAccount) {
+      const user = childProfile.linkedAccount;
+      if (!(await bcrypt.compare(data.password, user.passwordHash))) {
+        return res.status(401).json({ error: 'invalid_credentials' });
+      }
+
+      return issueSessionResponse(user, 200, res);
+    }
+
+    if (!data.name) {
+      return res.status(400).json({ error: 'child_name_required' });
+    }
+
+    const email = childAccountEmail(childProfile.id);
+    const existing = await prisma.user.findUnique({ where: { email } });
+    if (existing) {
+      return res.status(409).json({ error: 'child_profile_taken' });
+    }
+
+    const passwordHash = await bcrypt.hash(data.password, 12);
+    const user = await prisma.user.create({
+      data: {
+        workspaceId: workspace.id,
+        name: data.name,
+        email,
+        passwordHash,
+        role: 'child',
+        childProfileId: childProfile.id,
+        twoFactorEnabled: false,
+        highConflictMode: false
+      }
+    });
+
+    return issueSessionResponse(user, 201, res);
   } catch (error) {
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
