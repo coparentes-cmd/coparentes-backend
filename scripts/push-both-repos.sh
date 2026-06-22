@@ -2,8 +2,14 @@
 # Push both Coparentes repos using dugite git + optional GITHUB_TOKEN.
 set -euo pipefail
 
+if [[ -z "${GITHUB_TOKEN:-}" && -f "${HOME}/.coparentes-github.env" ]]; then
+  # shellcheck source=/dev/null
+  source "${HOME}/.coparentes-github.env"
+fi
+
 if [[ -z "${GITHUB_TOKEN:-}" ]]; then
   echo "Set a GitHub PAT first, e.g.:"
+  echo "  source ~/.coparentes-github.env"
   echo "  export GITHUB_TOKEN=ghp_xxxxxxxx"
   echo "Or run: gh auth login"
   exit 1
