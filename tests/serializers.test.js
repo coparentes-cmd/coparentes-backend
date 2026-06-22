@@ -7,7 +7,7 @@ describe('serializeThread hasUnread', () => {
   const thread = {
     id: 'thread_1',
     subject: 'Test',
-    category: 'Inne',
+    category: 'Szkoła',
     childId: null,
     lastActivity: new Date('2026-01-01T12:00:00.000Z')
   };

@@ -293,7 +293,7 @@ describe('E2E flow (register → join → thread → message → export → down
 
     const financeChannel = await request(server, 'POST', '/api/threads/channel', {
       token: tokenA,
-      body: { category: 'Finansowe' }
+      body: { category: 'Finanse' }
     });
     assert.equal(financeChannel.status, 200);
     assert.equal(financeChannel.json.audience, 'parents');
@@ -346,7 +346,7 @@ describe('E2E flow (register → join → thread → message → export → down
     );
     assert.ok(
       !listAsChild.json.threads.some((t) => t.id === financeChannel.json.id),
-      'child must not see Finansowe channel'
+      'child must not see Finanse channel'
     );
 
     const forbiddenThread = await request(server, 'GET', `/api/threads/${threadId}`, {

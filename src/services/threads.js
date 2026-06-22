@@ -10,9 +10,8 @@ import {
 export const CATEGORY_CHANNELS = [
   'Szkoła',
   'Zdrowie',
-  'Finansowe',
-  'Zmiana grafiku',
-  'Inne'
+  'Finanse',
+  'Zmiana grafiku'
 ];
 
 export const FAMILY_CATEGORY = 'Rodzina';

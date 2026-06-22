@@ -65,9 +65,8 @@ router.post('/channel', requireParentRole, async (req, res, next) => {
       category: z.enum([
         'Szkoła',
         'Zdrowie',
-        'Finansowe',
+        'Finanse',
         'Zmiana grafiku',
-        'Inne',
         'Rodzina'
       ])
     });
