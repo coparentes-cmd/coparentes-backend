@@ -4,6 +4,12 @@ import {
   getOrCreateCategoryThread
 } from './threads.js';
 import {
+  CRYPTO_KEYS,
+  calendarEventKey,
+  decryptOptional,
+  encryptOptional
+} from './crypto.service.js';
+import {
   getActiveOrPendingSchedule,
   serializeCustodyException,
   serializeCustodySchedule
@@ -161,10 +167,11 @@ export function serializeCustodySlot(slot) {
 }
 
 export function serializeCalendarEvent(event) {
+  const key = calendarEventKey(event.type);
   return {
     id: event.id,
-    title: event.title,
-    description: event.description,
+    title: decryptOptional(event.title, key),
+    description: decryptOptional(event.description, key),
     startDate: event.startDate.toISOString(),
     endDate: event.endDate ? event.endDate.toISOString() : null,
     type: event.type,
@@ -191,7 +198,7 @@ export function serializeSwapRequest(swap) {
 export function serializeExpense(expense) {
   return {
     id: expense.id,
-    title: expense.title,
+    title: decryptOptional(expense.title, CRYPTO_KEYS.KEY_FINANCE),
     amount: expense.amount,
     currency: expense.currency,
     category: expense.category,
@@ -202,7 +209,7 @@ export function serializeExpense(expense) {
     receiptUrl: expense.receiptUrl,
     hasReceipt: Boolean(expense.receiptContentBase64),
     status: expense.status,
-    note: expense.note,
+    note: decryptOptional(expense.note, CRYPTO_KEYS.KEY_FINANCE),
     hash: expense.hash
   };
 }
@@ -371,8 +378,8 @@ export async function createCalendarEvent({
     data: {
       workspaceId,
       createdById: createdBy.id,
-      title,
-      description: description ?? null,
+      title: encryptOptional(title, calendarEventKey(type)),
+      description: encryptOptional(description ?? null, calendarEventKey(type)),
       startDate: new Date(startDate),
       endDate: endDate ? new Date(endDate) : null,
       type,
@@ -418,8 +425,8 @@ export async function updateCalendarEvent({
   const row = await prisma.calendarEvent.update({
     where: { id: eventId },
     data: {
-      title,
-      description: description ?? null,
+      title: encryptOptional(title, calendarEventKey(type)),
+      description: encryptOptional(description ?? null, calendarEventKey(type)),
       startDate: new Date(startDate),
       endDate: endDate ? new Date(endDate) : null,
       type,

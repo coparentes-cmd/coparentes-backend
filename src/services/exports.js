@@ -9,6 +9,7 @@ import { getWorkspaceGraph } from './workspace.js';
 import { getThreadById, listThreads } from './threads.js';
 import { listCalendarExportItems } from './calendar.js';
 import { listExpensesInRange } from './finances.js';
+import { CRYPTO_KEYS, decryptOptional, encryptOptional } from './crypto.service.js';
 
 function buildPublicUrl(pathname) {
   if (!env.publicBaseUrl) {
@@ -134,7 +135,7 @@ export async function createExportJob({
       status: 'completed',
       downloadUrl,
       manifestHash,
-      payloadJson: JSON.stringify(payload),
+      payloadJson: encryptOptional(JSON.stringify(payload), CRYPTO_KEYS.KEY_GENERAL),
       expiresAt
     }
   });
@@ -157,7 +158,9 @@ export async function getExportDownload(workspaceId, exportId) {
 
   return {
     ...serializeExportJob(row),
-    payload: JSON.parse(row.payloadJson)
+    payload: JSON.parse(
+      decryptOptional(row.payloadJson, CRYPTO_KEYS.KEY_GENERAL)
+    )
   };
 }
 

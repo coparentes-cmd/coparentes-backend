@@ -1,6 +1,53 @@
 import { prisma } from '../lib/prisma.js';
 import { createInviteCode } from '../utils/security.js';
+import { env } from '../utils/env.js';
 import { serializeChild, serializeUser } from './serializers.js';
+import { CRYPTO_KEYS, encryptOptional } from './crypto.service.js';
+
+export function parentInviteExpiresAt(from = new Date()) {
+  return new Date(from.getTime() + env.parentInviteTtlHours * 60 * 60 * 1000);
+}
+
+export function isParentInviteExpired(workspace) {
+  if (!workspace?.inviteCodeExpiresAt) {
+    return true;
+  }
+  return workspace.inviteCodeExpiresAt < new Date();
+}
+
+async function generateUniqueParentInviteCode(client = prisma) {
+  let inviteCode = createInviteCode();
+  let attempts = 0;
+
+  while (attempts < 5) {
+    const existingInvite = await client.workspace.findUnique({ where: { inviteCode } });
+    if (!existingInvite) {
+      return inviteCode;
+    }
+    inviteCode = createInviteCode();
+    attempts += 1;
+  }
+
+  return inviteCode;
+}
+
+export async function refreshParentInviteCode(workspaceId, client = prisma) {
+  const inviteCode = await generateUniqueParentInviteCode(client);
+  return client.workspace.update({
+    where: { id: workspaceId },
+    data: {
+      inviteCode,
+      inviteCodeExpiresAt: parentInviteExpiresAt()
+    }
+  });
+}
+
+export async function workspaceHasParentB(workspaceId, client = prisma) {
+  const parentB = await client.user.findFirst({
+    where: { workspaceId, role: 'parentB' }
+  });
+  return parentB != null;
+}
 
 export async function createWorkspace({ name, client = prisma }) {
   let inviteCode = createInviteCode();
@@ -28,7 +75,8 @@ export async function createWorkspace({ name, client = prisma }) {
     data: {
       name,
       inviteCode,
-      childInviteCode
+      childInviteCode,
+      inviteCodeExpiresAt: parentInviteExpiresAt()
     }
   });
 }
@@ -37,6 +85,22 @@ export async function findWorkspaceByInviteCode(inviteCode) {
   return prisma.workspace.findUnique({
     where: { inviteCode: inviteCode.trim().toUpperCase() }
   });
+}
+
+export async function assertParentInviteJoinAllowed(workspace) {
+  if (!workspace) {
+    return { ok: false, error: 'workspace_not_found' };
+  }
+
+  if (await workspaceHasParentB(workspace.id)) {
+    return { ok: false, error: 'parent_already_joined' };
+  }
+
+  if (isParentInviteExpired(workspace)) {
+    return { ok: false, error: 'invite_expired' };
+  }
+
+  return { ok: true };
 }
 
 export async function findWorkspaceByChildInviteCode(childInviteCode) {
@@ -80,9 +144,9 @@ export async function createChild({
   const row = await prisma.child.create({
     data: {
       workspaceId,
-      name,
+      name: encryptOptional(name, CRYPTO_KEYS.KEY_GENERAL),
       dateOfBirth: new Date(dateOfBirth),
-      school: school ?? null
+      school: encryptOptional(school ?? null, CRYPTO_KEYS.KEY_GENERAL)
     }
   });
 
@@ -90,7 +154,7 @@ export async function createChild({
 }
 
 export async function getWorkspaceGraph(workspaceId) {
-  const workspace = await prisma.workspace.findUnique({
+  let workspace = await prisma.workspace.findUnique({
     where: { id: workspaceId },
     include: {
       users: { orderBy: { createdAt: 'asc' } },
@@ -102,10 +166,29 @@ export async function getWorkspaceGraph(workspaceId) {
     return null;
   }
 
+  const hasParentB = workspace.users.some((member) => member.role === 'parentB');
+  if (!hasParentB && isParentInviteExpired(workspace)) {
+    await refreshParentInviteCode(workspaceId);
+    workspace = await prisma.workspace.findUnique({
+      where: { id: workspaceId },
+      include: {
+        users: { orderBy: { createdAt: 'asc' } },
+        children: { orderBy: { name: 'asc' } }
+      }
+    });
+  }
+
+  if (!workspace) {
+    return null;
+  }
+
   return {
     id: workspace.id,
     name: workspace.name,
     inviteCode: workspace.inviteCode,
+    inviteCodeExpiresAt: workspace.inviteCodeExpiresAt
+      ? workspace.inviteCodeExpiresAt.toISOString()
+      : null,
     childInviteCode: workspace.childInviteCode,
     createdAt: workspace.createdAt.toISOString(),
     members: workspace.users.map(serializeUser),

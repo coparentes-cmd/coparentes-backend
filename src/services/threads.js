@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { createIntegrityHash } from '../utils/security.js';
+import { CRYPTO_KEYS, decryptOptional, encryptOptional } from './crypto.service.js';
 import { serializeThread } from './serializers.js';
 import {
   normalizeAttachments,
@@ -246,6 +247,11 @@ export async function addMessageToThread({
 
   const sentAt = new Date();
   const senderName = sender.name.split(' ')[0] || sender.name;
+  const encryptedContent = encryptOptional(trimmedContent, CRYPTO_KEYS.KEY_MESSAGES);
+  const encryptedAttachments =
+    normalizedAttachments.length > 0
+      ? encryptOptional(JSON.stringify(normalizedAttachments), CRYPTO_KEYS.KEY_MESSAGES)
+      : null;
   const payload = {
     threadId: thread.id,
     senderId: sender.id,
@@ -261,16 +267,13 @@ export async function addMessageToThread({
         workspaceId,
         senderId: sender.id,
         senderName,
-        content: trimmedContent,
+        content: encryptedContent,
         tone,
         sentAt,
         isDelivered: true,
         isRead: false,
         hash: createIntegrityHash(payload),
-        attachmentsJson:
-          normalizedAttachments.length > 0
-            ? JSON.stringify(normalizedAttachments)
-            : null
+        attachmentsJson: encryptedAttachments
       }
     }),
     prisma.thread.update({
@@ -309,7 +312,9 @@ export async function getMessageAttachmentDownload({
     return null;
   }
 
-  const attachments = parseStoredAttachments(message.attachmentsJson);
+  const attachments = parseStoredAttachments(
+    decryptOptional(message.attachmentsJson, CRYPTO_KEYS.KEY_MESSAGES)
+  );
   const attachment = attachments.find((item) => item.id === attachmentId);
   if (!attachment?.contentBase64) {
     return null;

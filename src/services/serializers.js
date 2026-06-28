@@ -2,11 +2,17 @@ import {
   parseStoredAttachments,
   serializeAttachmentsForClient
 } from './messageAttachments.js';
+import {
+  CRYPTO_KEYS,
+  calendarEventKey,
+  decryptOptional,
+  documentContentKey
+} from './crypto.service.js';
 
 export function serializeUser(user) {
   return {
     id: user.id,
-    name: user.name,
+    name: decryptOptional(user.name, CRYPTO_KEYS.KEY_GENERAL),
     email: user.email,
     role: user.role,
     childProfileId: user.childProfileId ?? null,
@@ -19,21 +25,25 @@ export function serializeUser(user) {
 export function serializeChild(child) {
   return {
     id: child.id,
-    name: child.name,
+    name: decryptOptional(child.name, CRYPTO_KEYS.KEY_GENERAL),
     dateOfBirth: child.dateOfBirth.toISOString(),
-    school: child.school
+    school: decryptOptional(child.school, CRYPTO_KEYS.KEY_GENERAL)
   };
 }
 
 export function serializeMessage(message) {
-  const attachments = parseStoredAttachments(message.attachmentsJson);
+  const attachmentsJson = decryptOptional(
+    message.attachmentsJson,
+    CRYPTO_KEYS.KEY_MESSAGES
+  );
+  const attachments = parseStoredAttachments(attachmentsJson);
 
   return {
     id: message.id,
     threadId: message.threadId,
     senderId: message.senderId,
     senderName: message.senderName,
-    content: message.content,
+    content: decryptOptional(message.content, CRYPTO_KEYS.KEY_MESSAGES),
     tone: message.tone,
     attachments: serializeAttachmentsForClient(attachments),
     sentAt: message.sentAt.toISOString(),

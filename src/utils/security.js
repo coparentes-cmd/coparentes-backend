@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
 import { env } from './env.js';
 
-export function createToken() {
-  return crypto.randomBytes(32).toString('hex');
+export function createToken(bytes = 32) {
+  return crypto.randomBytes(bytes).toString('hex');
 }
 
 export function createInviteCode() {

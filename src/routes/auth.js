@@ -9,9 +9,24 @@ import {
   createWorkspace,
   findWorkspaceByChildInviteCode,
   findWorkspaceByInviteCode,
+  assertParentInviteJoinAllowed,
   getChildJoinPreview
 } from '../services/workspace.js';
 import { createSessionForUser, deleteAllSessionsForUser, deleteSession } from '../services/session.js';
+import {
+  createLoginOtpChallenge,
+  maskEmail,
+  requiresEmailOtp,
+  resendLoginOtpChallenge,
+  verifyLoginOtpChallenge,
+  invalidateUserSecurityArtifacts
+} from '../services/otp.service.js';
+import {
+  isTrustedDeviceValid,
+  readTrustedDeviceToken,
+  TRUSTED_DEVICE_COOKIE,
+  trustedDeviceCookieOptions
+} from '../services/trustedDevice.service.js';
 
 const router = express.Router();
 
@@ -88,14 +103,19 @@ const loginSchema = z.object({
   password: z.string().min(8)
 });
 
-async function issueSessionResponse(user, statusCode, res) {
+async function issueSessionResponse(user, statusCode, res, { trustedDeviceToken } = {}) {
   const token = await createSessionForUser(user.id);
   const { user: serializedUser, workspace } = await buildAuthPayload(user);
+
+  if (trustedDeviceToken) {
+    res.cookie(TRUSTED_DEVICE_COOKIE, trustedDeviceToken, trustedDeviceCookieOptions());
+  }
 
   return res.status(statusCode).json({
     token,
     user: serializedUser,
-    workspace
+    workspace,
+    ...(trustedDeviceToken ? { trustedDeviceToken } : {})
   });
 }
 
@@ -242,6 +262,14 @@ router.post('/join', authActionLimiter, async (req, res, next) => {
       return res.status(404).json({ error: 'workspace_not_found' });
     }
 
+    if (!isChildJoin) {
+      const inviteCheck = await assertParentInviteJoinAllowed(workspace);
+      if (!inviteCheck.ok) {
+        const status = inviteCheck.error === 'workspace_not_found' ? 404 : 400;
+        return res.status(status).json({ error: inviteCheck.error });
+      }
+    }
+
     if (isChildJoin) {
       if (!data.childProfileId) {
         return res.status(400).json({ error: 'child_profile_required' });
@@ -300,6 +328,22 @@ router.post('/login', authActionLimiter, async (req, res, next) => {
       return res.status(403).json({ error: 'user_missing_workspace' });
     }
 
+    const trustedToken = readTrustedDeviceToken(req);
+    if (
+      requiresEmailOtp(user) &&
+      !(await isTrustedDeviceValid(user.id, trustedToken))
+    ) {
+      const { challenge, expiresAt, resendAvailableAt } =
+        await createLoginOtpChallenge(user);
+      return res.status(200).json({
+        requiresOtp: true,
+        challengeId: challenge.id,
+        email: maskEmail(user.email),
+        expiresAt: expiresAt.toISOString(),
+        resendAvailableAt: resendAvailableAt.toISOString()
+      });
+    }
+
     return issueSessionResponse(user, 200, res);
   } catch (error) {
     if (error?.name === 'ZodError') {
@@ -307,6 +351,82 @@ router.post('/login', authActionLimiter, async (req, res, next) => {
     }
     if (error?.message === 'user_missing_workspace') {
       return res.status(403).json({ error: 'user_missing_workspace' });
+    }
+    return next(error);
+  }
+});
+
+const verifyOtpSchema = z.object({
+  challengeId: z.string().min(8),
+  code: z.string().regex(/^\d{6}$/),
+  trustDevice: z.boolean().optional()
+});
+
+router.post('/login/verify-otp', authActionLimiter, async (req, res, next) => {
+  try {
+    const data = verifyOtpSchema.parse(req.body);
+    const result = await verifyLoginOtpChallenge({
+      challengeId: data.challengeId,
+      code: data.code,
+      trustDevice: data.trustDevice === true
+    });
+
+    if (result.error) {
+      if (result.error === 'invalid_otp') {
+        return res.status(401).json({
+          error: 'invalid_otp',
+          attemptsRemaining: result.attemptsRemaining ?? 0,
+          locked: result.locked === true
+        });
+      }
+      if (result.error === 'otp_expired') {
+        return res.status(410).json({ error: 'otp_expired' });
+      }
+      if (result.error === 'otp_locked') {
+        return res.status(429).json({ error: 'otp_locked' });
+      }
+      return res.status(400).json({ error: result.error });
+    }
+
+    return issueSessionResponse(result.user, 200, res, {
+      trustedDeviceToken: result.trustedDeviceToken
+    });
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
+const resendOtpSchema = z.object({
+  challengeId: z.string().min(8)
+});
+
+router.post('/login/resend-otp', authActionLimiter, async (req, res, next) => {
+  try {
+    const data = resendOtpSchema.parse(req.body);
+    const result = await resendLoginOtpChallenge(data.challengeId);
+
+    if (result.error) {
+      if (result.error === 'resend_cooldown') {
+        return res.status(429).json({
+          error: 'resend_cooldown',
+          resendAvailableAt: result.resendAvailableAt.toISOString()
+        });
+      }
+      return res.status(400).json({ error: result.error });
+    }
+
+    return res.status(200).json({
+      challengeId: result.challenge.id,
+      email: maskEmail(result.challenge.user?.email ?? ''),
+      expiresAt: result.expiresAt.toISOString(),
+      resendAvailableAt: result.resendAvailableAt.toISOString()
+    });
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
   }
@@ -403,6 +523,7 @@ router.post('/password', requireAuth, authActionLimiter, async (req, res, next) 
       data: { passwordHash }
     });
     await deleteAllSessionsForUser(user.id);
+    await invalidateUserSecurityArtifacts(user.id);
 
     return res.status(200).json({ success: true });
   } catch (error) {

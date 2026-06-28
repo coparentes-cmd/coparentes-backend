@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { createIntegrityHash } from '../utils/security.js';
+import { CRYPTO_KEYS, decryptOptional, encryptOptional } from './crypto.service.js';
 import { serializeExpense } from './calendar.js';
 import { validateReceiptBase64 } from './receiptOcr.js';
 
@@ -86,7 +87,7 @@ export async function createExpense({
   const row = await prisma.expense.create({
     data: {
       workspaceId,
-      title,
+      title: encryptOptional(title, CRYPTO_KEYS.KEY_FINANCE),
       amount,
       currency: currency ?? 'PLN',
       category,
@@ -95,10 +96,12 @@ export async function createExpense({
       splitRatio,
       date: new Date(date),
       receiptUrl: receiptContentBase64 ? null : receiptUrl ?? null,
-      receiptContentBase64: receiptContentBase64 ?? null,
+      receiptContentBase64: receiptContentBase64
+        ? encryptOptional(receiptContentBase64, CRYPTO_KEYS.KEY_FINANCE)
+        : null,
       receiptMimeType: receiptContentBase64 ? (receiptMimeType ?? 'image/jpeg') : null,
       status: status ?? 'pending',
-      note: note ?? null,
+      note: encryptOptional(note ?? null, CRYPTO_KEYS.KEY_FINANCE),
       hash: createIntegrityHash(payload)
     }
   });
@@ -132,7 +135,7 @@ export async function getExpenseReceipt(workspaceId, expenseId) {
 
   return {
     expenseId: row.id,
-    contentBase64: row.receiptContentBase64,
+    contentBase64: decryptOptional(row.receiptContentBase64, CRYPTO_KEYS.KEY_FINANCE),
     mimeType: row.receiptMimeType ?? 'image/jpeg'
   };
 }

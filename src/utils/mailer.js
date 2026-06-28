@@ -34,3 +34,21 @@ export async function sendInviteEmail({ to, acceptUrl, inviterEmail }) {
 
   return { skipped: false, emailSent: true, result };
 }
+
+export async function sendOtpEmail({ to, code }) {
+  if (!resend || !env.resendFromEmail) {
+    console.warn('Resend is not configured. OTP email was not sent.');
+    return { skipped: true, emailSent: false };
+  }
+
+  const result = await resend.emails.send({
+    from: env.resendFromEmail,
+    to,
+    subject: 'Twój kod weryfikacyjny – Coparentes',
+    text:
+      `Twój kod weryfikacyjny Coparentes: ${code}\n\n` +
+      'Kod jest ważny przez 10 minut. Jeśli to nie Ty, zignoruj tę wiadomość.'
+  });
+
+  return { skipped: false, emailSent: true, result };
+}

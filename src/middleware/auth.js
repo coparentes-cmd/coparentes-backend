@@ -32,6 +32,8 @@ export async function requireAuth(req, res, next) {
 
     req.user = user;
     req.sessionToken = token;
+    req.workspaceId = user.workspaceId;
+    req.familyId = user.workspaceId;
     return next();
   } catch (error) {
     return next(error);

@@ -36,6 +36,7 @@ router.post('/send', inviteSendLimiter, requireAuth, requireParentRole, async (r
     const token = uuidv4();
     const invite = await prisma.emailInvite.create({
       data: {
+        workspaceId: req.user.workspaceId,
         email: data.email,
         token,
         inviterId: req.user.id,

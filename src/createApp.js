@@ -10,6 +10,11 @@ import financeRoutes from './routes/finances.js';
 import documentRoutes from './routes/documents.js';
 import workspaceRoutes from './routes/workspace.js';
 import { createCorsMiddleware } from './middleware/cors.js';
+import {
+  applySecurityHeaders,
+  enforceHttps,
+  rejectInsecureApi
+} from './middleware/security.js';
 import { env } from './utils/env.js';
 import { prisma } from './lib/prisma.js';
 
@@ -21,7 +26,19 @@ export function createApp() {
   const app = express();
 
   app.set('trust proxy', 1);
-  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  app.use(enforceHttps);
+  app.use(rejectInsecureApi);
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      contentSecurityPolicy: false,
+      hsts: false,
+      frameguard: false,
+      xContentTypeOptions: false,
+      xXssProtection: false
+    })
+  );
+  app.use(applySecurityHeaders);
   app.use(createCorsMiddleware());
   app.use(express.json({ limit: '1mb' }));
   app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));

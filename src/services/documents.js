@@ -1,5 +1,11 @@
 import { prisma } from '../lib/prisma.js';
 import { serializeDocument } from './serializers.js';
+import {
+  CRYPTO_KEYS,
+  documentContentKey,
+  decryptOptional,
+  encryptOptional
+} from './crypto.service.js';
 
 const ALLOWED_CATEGORIES = new Set([
   'Agreements',
@@ -75,7 +81,9 @@ export async function createDocument({
       fileName: fileName ?? null,
       mimeType: mimeType ?? null,
       fileUrl: fileUrl ?? null,
-      contentBase64: contentBase64 ?? null,
+      contentBase64: contentBase64
+        ? encryptOptional(contentBase64, documentContentKey(category))
+        : null,
       sizeBytes
     },
     include: { child: true }
@@ -100,7 +108,10 @@ export async function getDocumentDownload(workspaceId, documentId, userId) {
 
   return {
     ...serializeDocument(row),
-    contentBase64: row.contentBase64,
+    contentBase64: decryptOptional(
+      row.contentBase64,
+      documentContentKey(row.category)
+    ),
     fileUrl: row.fileUrl
   };
 }

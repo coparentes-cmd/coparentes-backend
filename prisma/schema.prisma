@@ -110,6 +110,7 @@ model Workspace {
   name            String
   inviteCode      String   @unique
   childInviteCode String   @unique
+  inviteCodeExpiresAt DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -125,6 +126,7 @@ model Workspace {
   swapRequests   SwapRequest[]
   expenses       Expense[]
   documents      Document[]
+  emailInvites   EmailInvite[]
 
   @@index([inviteCode])
   @@index([childInviteCode])
@@ -145,6 +147,8 @@ model User {
 
   sessions         Session[]
   sentEmailInvites EmailInvite[] @relation("SentEmailInvites")
+  loginOtpChallenges LoginOtpChallenge[]
+  trustedDevices   TrustedDevice[]
   threadsCreated   Thread[]      @relation("ThreadCreator")
   messages         Message[]
   exportJobs       ExportJob[]
@@ -285,10 +289,40 @@ model ExportJob {
   @@index([expiresAt])
 }
 
+/// OTP e-mail po logowaniu (hash bcrypt, ważność 10 min).
+model LoginOtpChallenge {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash       String
+  expiresAt      DateTime
+  used           Boolean  @default(false)
+  failedAttempts Int      @default(0)
+  lastSentAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  @@index([userId, used, expiresAt])
+}
+
+/// Zaufane urządzenie — pomija OTP przez 30 dni.
+model TrustedDevice {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 /// Zaproszenie e-mailowe (osobny flow od Workspace.inviteCode).
 model EmailInvite {
-  id         String            @id @default(cuid())
-  email      String
+  id          String            @id @default(cuid())
+  workspaceId String
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  email       String
   token      String            @unique
   status     EmailInviteStatus @default(PENDING)
   inviterId  String
@@ -302,6 +336,7 @@ model EmailInvite {
   @@index([email])
   @@index([status])
   @@index([inviterId])
+  @@index([workspaceId])
 }
 
 model CustodySlot {

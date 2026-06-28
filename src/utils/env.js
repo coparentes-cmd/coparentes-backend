@@ -37,6 +37,20 @@ export const env = {
   resendApiKey: process.env.RESEND_API_KEY || '',
   resendFromEmail: process.env.RESEND_FROM_EMAIL || '',
   inviteExpiresDays: Number(process.env.INVITE_EXPIRES_DAYS || 7),
+  parentInviteTtlHours: Number(process.env.PARENT_INVITE_TTL_HOURS || 24),
   integritySecret: process.env.INTEGRITY_SECRET || '',
-  exportTtlDays: Number(process.env.EXPORT_TTL_DAYS || 30)
+  exportTtlDays: Number(process.env.EXPORT_TTL_DAYS || 30),
+  forceHttps:
+    process.env.FORCE_HTTPS === 'true' || process.env.NODE_ENV === 'production',
+  encryptionKeys: {
+    KEY_HEALTH: process.env.KEY_HEALTH || '',
+    KEY_FINANCE: process.env.KEY_FINANCE || '',
+    KEY_MESSAGES: process.env.KEY_MESSAGES || '',
+    KEY_GENERAL: process.env.KEY_GENERAL || ''
+  },
+  otpEnabled: process.env.OTP_ENABLED !== 'false',
+  otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES || 10),
+  otpMaxAttempts: Number(process.env.OTP_MAX_ATTEMPTS || 5),
+  otpResendCooldownSeconds: Number(process.env.OTP_RESEND_COOLDOWN_SECONDS || 60),
+  trustedDeviceTtlDays: Number(process.env.TRUSTED_DEVICE_TTL_DAYS || 30)
 };
