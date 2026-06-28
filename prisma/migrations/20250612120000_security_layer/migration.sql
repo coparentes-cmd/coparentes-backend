@@ -1,4 +1,4 @@
--- Security layer + 24h parent invite expiry (idempotent for production redeploy)
+-- Security layer: OTP challenges, trusted devices, EmailInvite.workspaceId (idempotent)
 
 CREATE TABLE IF NOT EXISTS "LoginOtpChallenge" (
     "id" TEXT NOT NULL,
@@ -84,9 +84,3 @@ BEGIN
       FOREIGN KEY ("workspaceId") REFERENCES "Workspace"("id") ON DELETE CASCADE ON UPDATE CASCADE;
   END IF;
 END $$;
-
-ALTER TABLE "Workspace" ADD COLUMN IF NOT EXISTS "inviteCodeExpiresAt" TIMESTAMP(3);
-
-UPDATE "Workspace"
-SET "inviteCodeExpiresAt" = NOW() + INTERVAL '24 hours'
-WHERE "inviteCodeExpiresAt" IS NULL;
