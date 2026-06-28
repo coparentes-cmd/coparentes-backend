@@ -42,6 +42,27 @@ describe('Security headers middleware', () => {
 });
 
 describe('HTTPS enforcement in production mode', () => {
+  it('allows internal health probe over HTTP when FORCE_HTTPS is enabled', async () => {
+    const previousForce = process.env.FORCE_HTTPS;
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.FORCE_HTTPS = 'true';
+    process.env.NODE_ENV = 'production';
+
+    const { createApp: createProdApp } = await import(
+      `../src/createApp.js?health=${Date.now()}`
+    );
+    const prodApp = createProdApp();
+    const prodServer = await listen(prodApp);
+    try {
+      const res = await request(prodServer, 'GET', '/health');
+      assert.equal(res.status, 200);
+    } finally {
+      prodServer.close();
+      process.env.FORCE_HTTPS = previousForce;
+      process.env.NODE_ENV = previousNodeEnv;
+    }
+  });
+
   it('rejects insecure API requests when FORCE_HTTPS is enabled', async () => {
     const previousForce = process.env.FORCE_HTTPS;
     const previousNodeEnv = process.env.NODE_ENV;

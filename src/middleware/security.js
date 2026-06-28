@@ -17,12 +17,20 @@ function forceHttpsEnabled() {
   );
 }
 
+function isHealthProbePath(pathname) {
+  return (
+    pathname === '/health' ||
+    pathname === '/api/health' ||
+    pathname === '/api/ready'
+  );
+}
+
 export function enforceHttps(req, res, next) {
   if (!forceHttpsEnabled() || isSecureRequest(req)) {
     return next();
   }
 
-  if (req.path.startsWith('/api')) {
+  if (req.path.startsWith('/api') || isHealthProbePath(req.path)) {
     return next();
   }
 
