@@ -102,7 +102,15 @@ describe('E2E flow (register → join → thread → message → export → down
         name: 'E2E Anna Test',
         email: emails.parentA,
         password: PASSWORD,
-        workspaceName: 'Rodzina E2E'
+        workspaceName: 'Rodzina E2E',
+        consents: {
+          TERMS: true,
+          DATA_PROCESSING: true,
+          CHILD_DATA: true,
+          EMAIL_NOTIFICATIONS: true,
+          MARKETING: false,
+          ANALYTICS: false
+        }
       }
     });
     assert.equal(register.status, 201, `register failed: ${JSON.stringify(register.json)}`);

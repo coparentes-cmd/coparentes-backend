@@ -27,8 +27,16 @@ import {
   TRUSTED_DEVICE_COOKIE,
   trustedDeviceCookieOptions
 } from '../services/trustedDevice.service.js';
+import {
+  saveRegistrationConsents,
+  validateRequiredConsents
+} from '../services/consent.service.js';
 
 const router = express.Router();
+
+function clientIp(req) {
+  return req.ip || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || null;
+}
 
 const authActionLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -38,11 +46,21 @@ const authActionLimiter = rateLimit({
   message: { error: 'Too many requests, try again later' }
 });
 
+const consentsSchema = z.object({
+  TERMS: z.boolean(),
+  DATA_PROCESSING: z.boolean(),
+  CHILD_DATA: z.boolean(),
+  EMAIL_NOTIFICATIONS: z.boolean(),
+  MARKETING: z.boolean(),
+  ANALYTICS: z.boolean()
+});
+
 const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(10),
-  workspaceName: z.string().min(2)
+  workspaceName: z.string().min(2),
+  consents: consentsSchema
 });
 
 const joinSchema = z
@@ -123,6 +141,11 @@ router.post('/register', authActionLimiter, async (req, res, next) => {
   try {
     const data = registerSchema.parse(req.body);
 
+    const consentCheck = validateRequiredConsents(data.consents);
+    if (!consentCheck.ok) {
+      return res.status(400).json({ error: consentCheck.error });
+    }
+
     const existing = await prisma.user.findUnique({
       where: { email: data.email }
     });
@@ -131,10 +154,11 @@ router.post('/register', authActionLimiter, async (req, res, next) => {
     }
 
     const passwordHash = await bcrypt.hash(data.password, 12);
+    const ipAddress = clientIp(req);
 
     const user = await prisma.$transaction(async (tx) => {
       const workspace = await createWorkspace({ name: data.workspaceName, client: tx });
-      return tx.user.create({
+      const createdUser = await tx.user.create({
         data: {
           workspaceId: workspace.id,
           name: data.name,
@@ -145,6 +169,15 @@ router.post('/register', authActionLimiter, async (req, res, next) => {
           highConflictMode: false
         }
       });
+
+      await saveRegistrationConsents({
+        userId: createdUser.id,
+        consents: data.consents,
+        ipAddress,
+        client: tx
+      });
+
+      return createdUser;
     });
 
     return issueSessionResponse(user, 201, res);

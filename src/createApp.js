@@ -2,6 +2,7 @@ import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import authRoutes from './routes/auth.js';
+import consentRoutes from './routes/consents.js';
 import inviteRoutes from './routes/invite.js';
 import threadRoutes from './routes/threads.js';
 import exportRoutes from './routes/exports.js';
@@ -72,6 +73,7 @@ export function createApp() {
 
   // Flutter: AuthRepository (limiter tylko na register/join/login w routes/auth.js)
   app.use('/api/auth', authRoutes);
+  app.use('/api/consents', consentRoutes);
 
   // Flutter: optional email invites
   app.use('/api/invite', inviteRoutes);

@@ -32,6 +32,27 @@ describe('Security guards (no DB)', () => {
     assert.equal(res.json.error, 'invalid_request');
   });
 
+  it('POST /api/auth/register — missing required consents returns 400', async () => {
+    const res = await request(server, 'POST', '/api/auth/register', {
+      body: {
+        name: 'Anna Test',
+        email: 'anna-consent-test@example.com',
+        password: 'Password1234!',
+        workspaceName: 'Rodzina Test',
+        consents: {
+          TERMS: true,
+          DATA_PROCESSING: true,
+          CHILD_DATA: false,
+          EMAIL_NOTIFICATIONS: false,
+          MARKETING: false,
+          ANALYTICS: false
+        }
+      }
+    });
+    assert.equal(res.status, 400);
+    assert.equal(res.json.error, 'required_consents_missing');
+  });
+
   it('POST /api/calendar/swaps/x/respond — requires Bearer', async () => {
     const res = await request(server, 'POST', '/api/calendar/swaps/swap_x/respond', {
       body: { status: 'accepted' }

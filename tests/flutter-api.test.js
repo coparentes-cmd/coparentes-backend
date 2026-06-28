@@ -90,6 +90,11 @@ describe('Flutter API contract (no DB)', () => {
     assert.equal(res.status, 401);
   });
 
+  it('GET /api/consents — requires Bearer (ConsentRepository)', async () => {
+    const res = await request(server, 'GET', '/api/consents');
+    assert.equal(res.status, 401);
+  });
+
   it('POST /api/auth/password — requires Bearer', async () => {
     const res = await request(server, 'POST', '/api/auth/password', {
       body: {

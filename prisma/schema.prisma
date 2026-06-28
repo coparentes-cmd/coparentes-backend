@@ -104,6 +104,15 @@ enum ThreadAudience {
   family
 }
 
+enum ConsentType {
+  TERMS
+  DATA_PROCESSING
+  CHILD_DATA
+  EMAIL_NOTIFICATIONS
+  MARKETING
+  ANALYTICS
+}
+
 /// Przestrzeń współrodzicielska (rodzina). inviteCode = kod zaproszenia dla parentB / child / observer.
 model Workspace {
   id              String   @id @default(cuid())
@@ -160,9 +169,27 @@ model User {
   documentsUploaded Document[]     @relation("DocumentUploader")
   childProfileId    String?          @unique
   childProfile      Child?           @relation("ChildLinkedAccount", fields: [childProfileId], references: [id], onDelete: SetNull)
+  consents          UserConsent[]
 
   @@index([email])
   @@index([workspaceId])
+}
+
+/// Audit trail zgód RODO (append-only — każda zmiana = nowy wiersz).
+model UserConsent {
+  id             String      @id @default(cuid())
+  userId         String
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  consentType    ConsentType
+  granted        Boolean
+  grantedAt      DateTime
+  ipAddressHash  String
+  consentVersion String
+  revokedAt      DateTime?
+  createdAt      DateTime    @default(now())
+
+  @@index([userId, consentType, grantedAt])
+  @@index([userId])
 }
 
 model Child {
