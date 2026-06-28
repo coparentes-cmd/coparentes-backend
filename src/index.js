@@ -1,6 +1,7 @@
 import { createApp } from './createApp.js';
 import { getCorsConfigSummary } from './middleware/cors.js';
 import { env } from './utils/env.js';
+import { isEmailDeliveryConfigured } from './utils/mailer.js';
 import { seedDemoData } from './lib/seed.js';
 import { purgeExpiredSessions } from './services/session.js';
 import { purgeExpiredExportJobs } from './services/exports.js';
@@ -42,6 +43,9 @@ async function start() {
   app.listen(env.port, () => {
     const cors = getCorsConfigSummary();
     console.log(`Coparentes API listening on port ${env.port}`);
+    console.log(
+      `Email delivery: ${isEmailDeliveryConfigured() ? 'configured' : 'NOT configured (Resend)'}`
+    );
     console.log(
       `CORS: ${cors.exactOrigins.length} exact origin(s), ${cors.originPatterns.length} pattern(s), localDev=${cors.allowLocalDevOrigins}`
     );

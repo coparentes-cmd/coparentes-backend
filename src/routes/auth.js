@@ -366,15 +366,25 @@ router.post('/login', authActionLimiter, async (req, res, next) => {
       requiresEmailOtp(user) &&
       !(await isTrustedDeviceValid(user.id, trustedToken))
     ) {
-      const { challenge, expiresAt, resendAvailableAt } =
-        await createLoginOtpChallenge(user);
-      return res.status(200).json({
-        requiresOtp: true,
-        challengeId: challenge.id,
-        email: maskEmail(user.email),
-        expiresAt: expiresAt.toISOString(),
-        resendAvailableAt: resendAvailableAt.toISOString()
-      });
+      try {
+        const { challenge, expiresAt, resendAvailableAt } =
+          await createLoginOtpChallenge(user);
+        return res.status(200).json({
+          requiresOtp: true,
+          challengeId: challenge.id,
+          email: maskEmail(user.email),
+          expiresAt: expiresAt.toISOString(),
+          resendAvailableAt: resendAvailableAt.toISOString()
+        });
+      } catch (error) {
+        if (
+          error?.code === 'email_not_configured' ||
+          error?.code === 'email_send_failed'
+        ) {
+          return res.status(503).json({ error: 'otp_email_failed' });
+        }
+        throw error;
+      }
     }
 
     return issueSessionResponse(user, 200, res);
@@ -439,7 +449,18 @@ const resendOtpSchema = z.object({
 router.post('/login/resend-otp', authActionLimiter, async (req, res, next) => {
   try {
     const data = resendOtpSchema.parse(req.body);
-    const result = await resendLoginOtpChallenge(data.challengeId);
+    let result;
+    try {
+      result = await resendLoginOtpChallenge(data.challengeId);
+    } catch (error) {
+      if (
+        error?.code === 'email_not_configured' ||
+        error?.code === 'email_send_failed'
+      ) {
+        return res.status(503).json({ error: 'otp_email_failed' });
+      }
+      throw error;
+    }
 
     if (result.error) {
       if (result.error === 'resend_cooldown') {

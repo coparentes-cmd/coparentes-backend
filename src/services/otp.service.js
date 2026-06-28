@@ -24,6 +24,9 @@ export function requiresEmailOtp(user) {
   if (!env.otpEnabled || !env.resendApiKey || !env.resendFromEmail) {
     return false;
   }
+  if (!user?.twoFactorEnabled) {
+    return false;
+  }
   return !String(user.email).endsWith('@accounts.coparentes.internal');
 }
 
@@ -50,7 +53,12 @@ export async function createLoginOtpChallenge(user) {
     }
   });
 
-  await sendOtpEmail({ to: user.email, code });
+  try {
+    await sendOtpEmail({ to: user.email, code });
+  } catch (error) {
+    await prisma.loginOtpChallenge.delete({ where: { id: challenge.id } });
+    throw error;
+  }
 
   return {
     challenge,
@@ -100,7 +108,12 @@ export async function resendLoginOtpChallenge(challengeId) {
     include: { user: true }
   });
 
-  await sendOtpEmail({ to: existing.user.email, code });
+  try {
+    await sendOtpEmail({ to: existing.user.email, code });
+  } catch (error) {
+    await prisma.loginOtpChallenge.delete({ where: { id: challenge.id } });
+    throw error;
+  }
 
   return {
     challenge,

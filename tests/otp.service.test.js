@@ -31,13 +31,17 @@ describe('otp.service helpers', () => {
     assert.equal(maskEmail('ab@test.com'), 'a***@test.com');
   });
 
-  it('requires OTP for parent emails but not child internal accounts', () => {
+  it('requires OTP only when 2FA is enabled for parent emails', () => {
     assert.equal(
-      requiresEmailOtp({ email: 'parent@example.com' }),
+      requiresEmailOtp({ email: 'parent@example.com', twoFactorEnabled: true }),
       true
     );
     assert.equal(
-      requiresEmailOtp({ email: 'child+cuid@accounts.coparentes.internal' }),
+      requiresEmailOtp({ email: 'parent@example.com', twoFactorEnabled: false }),
+      false
+    );
+    assert.equal(
+      requiresEmailOtp({ email: 'child+cuid@accounts.coparentes.internal', twoFactorEnabled: true }),
       false
     );
   });
