@@ -18,11 +18,18 @@ function resolveKeyMaterial(keyName) {
     return Buffer.from(configured, 'base64');
   }
 
+  if (env.integritySecret) {
+    return crypto
+      .createHash('sha256')
+      .update(`${env.integritySecret}:${keyName}`)
+      .digest();
+  }
+
   if (env.nodeEnv === 'production') {
     throw new Error(`Missing encryption key: ${keyName}`);
   }
 
-  const fallbackSeed = env.integritySecret || 'coparentes-dev-only-key';
+  const fallbackSeed = 'coparentes-dev-only-key';
   return crypto
     .createHash('sha256')
     .update(`${fallbackSeed}:${keyName}`)

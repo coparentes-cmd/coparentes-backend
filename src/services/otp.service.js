@@ -21,7 +21,7 @@ export function maskEmail(email) {
 }
 
 export function requiresEmailOtp(user) {
-  if (!env.otpEnabled) {
+  if (!env.otpEnabled || !env.resendApiKey || !env.resendFromEmail) {
     return false;
   }
   return !String(user.email).endsWith('@accounts.coparentes.internal');

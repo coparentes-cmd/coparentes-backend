@@ -9,6 +9,8 @@ process.env.DATABASE_URL ??= 'postgresql://localhost:5432/coparentes_test';
 process.env.FRONTEND_URL ??= 'http://localhost:8080';
 process.env.NODE_ENV = 'test';
 process.env.OTP_ENABLED = 'true';
+process.env.RESEND_API_KEY = 're_test_key';
+process.env.RESEND_FROM_EMAIL = 'Coparentes <noreply@coparentes.app>';
 
 const {
   generateOtpCode,
