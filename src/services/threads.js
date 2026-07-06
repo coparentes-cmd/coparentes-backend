@@ -9,6 +9,7 @@ import {
 } from './messageAttachments.js';
 
 export const CATEGORY_CHANNELS = [
+  'Wszystkie',
   'Szkoła',
   'Zdrowie',
   'Finanse',
@@ -47,6 +48,14 @@ export function canUserSendMessage(userRole, thread) {
 export async function listThreads(workspaceId, viewerUserId, userRole = 'parentA') {
   if (userRole === 'parentA' || userRole === 'parentB' || userRole === 'child') {
     await getOrCreateFamilyThread({ workspaceId, createdById: viewerUserId });
+  }
+
+  if (userRole === 'parentA' || userRole === 'parentB') {
+    await getOrCreateCategoryThread({
+      workspaceId,
+      createdBy: { id: viewerUserId, role: userRole },
+      category: 'Wszystkie'
+    });
   }
 
   const threads = await prisma.thread.findMany({

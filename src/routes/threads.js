@@ -93,6 +93,7 @@ router.post('/channel', requireParentRole, async (req, res, next) => {
   try {
     const schema = z.object({
       category: z.enum([
+        'Wszystkie',
         'Szkoła',
         'Zdrowie',
         'Finanse',
