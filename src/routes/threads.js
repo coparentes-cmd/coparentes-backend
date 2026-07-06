@@ -12,6 +12,10 @@ import {
   listThreads,
   markThreadAsRead
 } from '../services/threads.js';
+import {
+  listMessageTagsForUser,
+  setMessageTagsForUser
+} from '../services/messageTags.js';
 
 const router = express.Router();
 
@@ -19,13 +23,39 @@ router.use(requireAuth);
 
 router.get('/', async (req, res, next) => {
   try {
-    const threads = await listThreads(
-      req.user.workspaceId,
-      req.user.id,
-      req.user.role
-    );
-    return res.json({ threads });
+    const [threads, messageTags] = await Promise.all([
+      listThreads(req.user.workspaceId, req.user.id, req.user.role),
+      listMessageTagsForUser({
+        workspaceId: req.user.workspaceId,
+        userId: req.user.id
+      })
+    ]);
+    return res.json({ threads, messageTags });
   } catch (error) {
+    return next(error);
+  }
+});
+
+router.put('/messages/:messageId/tags', requireParentRole, async (req, res, next) => {
+  try {
+    const schema = z.object({
+      tags: z.array(z.string().min(1).max(40)).max(10)
+    });
+    const data = schema.parse(req.body);
+    const messageTags = await setMessageTagsForUser({
+      workspaceId: req.user.workspaceId,
+      userId: req.user.id,
+      messageId: req.params.messageId,
+      tags: data.tags
+    });
+    return res.json({ messageTags });
+  } catch (error) {
+    if (error?.code === 'message_not_found') {
+      return res.status(404).json({ error: 'message_not_found' });
+    }
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
     return next(error);
   }
 });

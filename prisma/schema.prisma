@@ -136,6 +136,7 @@ model Workspace {
   expenses       Expense[]
   documents      Document[]
   emailInvites   EmailInvite[]
+  messageUserTags MessageUserTag[]
 
   @@index([inviteCode])
   @@index([childInviteCode])
@@ -170,6 +171,7 @@ model User {
   childProfileId    String?          @unique
   childProfile      Child?           @relation("ChildLinkedAccount", fields: [childProfileId], references: [id], onDelete: SetNull)
   consents          UserConsent[]
+  messageUserTags   MessageUserTag[]
 
   @@index([email])
   @@index([workspaceId])
@@ -285,10 +287,29 @@ model Message {
   isRead      Boolean     @default(false)
   hash        String
   attachmentsJson String? @db.Text
+  userTags    MessageUserTag[]
 
   @@index([threadId])
   @@index([workspaceId])
   @@index([sentAt])
+}
+
+/// Prywatny tag użytkownika przypisany do wiadomości (widoczny tylko dla właściciela).
+model MessageUserTag {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messageId   String
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  threadId    String
+  tag         String
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, messageId, tag])
+  @@index([userId, workspaceId, tag])
+  @@index([userId, threadId])
 }
 
 /// Zadanie eksportu dowodów (messages / calendar / finances / fullPack).
