@@ -13,9 +13,16 @@ export const CRYPTO_KEYS = {
 };
 
 function resolveKeyMaterial(keyName) {
-  const configured = env.encryptionKeys[keyName];
+  const configured = env.encryptionKeys[keyName]?.trim();
   if (configured) {
-    return Buffer.from(configured, 'base64');
+    try {
+      const key = Buffer.from(configured, 'base64');
+      if (key.length === 32) {
+        return key;
+      }
+    } catch (_) {
+      // Ignore invalid base64 and fall back to derived key material.
+    }
   }
 
   if (env.integritySecret) {
@@ -99,6 +106,18 @@ export function encryptOptional(value, keyName) {
 
 export function decryptOptional(value, keyName) {
   return value == null || value === '' ? value : decrypt(value, keyName);
+}
+
+export function decryptOptionalSafe(value, keyName, fallback = '') {
+  if (value == null || value === '') {
+    return fallback;
+  }
+
+  try {
+    return decrypt(value, keyName);
+  } catch (_) {
+    return isEncrypted(String(value)) ? fallback : String(value);
+  }
 }
 
 export function documentContentKey(category) {

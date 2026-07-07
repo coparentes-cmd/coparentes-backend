@@ -288,6 +288,30 @@ describe('E2E flow (register → join → thread → message → export → down
     assert.equal(schoolAgain.status, 200);
     assert.equal(schoolAgain.json.id, schoolChannel.json.id);
 
+    const allChannel = await request(server, 'POST', '/api/threads/channel', {
+      token: tokenA,
+      body: { category: 'Wszystkie' }
+    });
+    assert.equal(allChannel.status, 200);
+    assert.equal(allChannel.json.subject, 'Wszystkie');
+    assert.equal(allChannel.json.category, 'Wszystkie');
+
+    const sendToAll = await request(
+      server,
+      'POST',
+      `/api/threads/${allChannel.json.id}/messages`,
+      {
+        token: tokenA,
+        body: { content: 'Wiadomość w kanale Wszystkie', tone: 'neutral' }
+      }
+    );
+    assert.equal(
+      sendToAll.status,
+      201,
+      `sendToAll failed: ${JSON.stringify(sendToAll.json)}`
+    );
+    assert.equal(sendToAll.json.messages.at(-1).content, 'Wiadomość w kanale Wszystkie');
+
     // 5. List threads (parentA) — Flutter: getThreads
     const listThreads = await request(server, 'GET', '/api/threads', {
       token: tokenA

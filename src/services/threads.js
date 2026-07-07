@@ -255,7 +255,11 @@ export async function addMessageToThread({
   }
 
   const sentAt = new Date();
-  const senderName = sender.name.split(' ')[0] || sender.name;
+  const senderDisplayName =
+    decryptOptional(sender.name, CRYPTO_KEYS.KEY_GENERAL) ??
+    sender.name ??
+    'Użytkownik';
+  const senderName = senderDisplayName.split(' ')[0] || senderDisplayName;
   const encryptedContent = encryptOptional(trimmedContent, CRYPTO_KEYS.KEY_MESSAGES);
   const encryptedAttachments =
     normalizedAttachments.length > 0

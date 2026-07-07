@@ -6,6 +6,7 @@ import {
   CRYPTO_KEYS,
   calendarEventKey,
   decryptOptional,
+  decryptOptionalSafe,
   documentContentKey
 } from './crypto.service.js';
 
@@ -43,7 +44,11 @@ export function serializeMessage(message) {
     threadId: message.threadId,
     senderId: message.senderId,
     senderName: message.senderName,
-    content: decryptOptional(message.content, CRYPTO_KEYS.KEY_MESSAGES),
+    content: decryptOptionalSafe(
+      message.content,
+      CRYPTO_KEYS.KEY_MESSAGES,
+      '[wiadomość niedostępna]'
+    ),
     tone: message.tone,
     attachments: serializeAttachmentsForClient(attachments),
     sentAt: message.sentAt.toISOString(),

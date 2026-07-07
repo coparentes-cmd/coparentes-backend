@@ -107,6 +107,13 @@ export function createApp() {
       return res.status(403).json({ error: 'user_missing_workspace' });
     }
 
+    if (
+      typeof error?.message === 'string' &&
+      error.message.startsWith('Missing encryption key:')
+    ) {
+      return res.status(503).json({ error: 'encryption_not_configured' });
+    }
+
     if (error?.name === 'ZodError') {
       return res.status(400).json({
         error: 'invalid_request',
