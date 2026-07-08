@@ -32,6 +32,13 @@ function resolveKeyMaterial(keyName) {
       .digest();
   }
 
+  if (env.jwtSecret) {
+    return crypto
+      .createHash('sha256')
+      .update(`${env.jwtSecret}:${keyName}`)
+      .digest();
+  }
+
   if (env.nodeEnv === 'production') {
     throw new Error(`Missing encryption key: ${keyName}`);
   }

@@ -39,6 +39,7 @@ export const env = {
   inviteExpiresDays: Number(process.env.INVITE_EXPIRES_DAYS || 7),
   parentInviteTtlHours: Number(process.env.PARENT_INVITE_TTL_HOURS || 24),
   integritySecret: process.env.INTEGRITY_SECRET || '',
+  jwtSecret: process.env.JWT_SECRET || '',
   exportTtlDays: Number(process.env.EXPORT_TTL_DAYS || 30),
   forceHttps:
     process.env.FORCE_HTTPS === 'true' || process.env.NODE_ENV === 'production',
