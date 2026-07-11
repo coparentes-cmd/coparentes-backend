@@ -5,7 +5,6 @@ import {
 import {
   CRYPTO_KEYS,
   calendarEventKey,
-  decryptOptional,
   decryptOptionalSafe,
   documentContentKey
 } from './crypto.service.js';
@@ -13,7 +12,11 @@ import {
 export function serializeUser(user) {
   return {
     id: user.id,
-    name: decryptOptional(user.name, CRYPTO_KEYS.KEY_GENERAL),
+    name: decryptOptionalSafe(
+      user.name,
+      CRYPTO_KEYS.KEY_GENERAL,
+      'Użytkownik'
+    ),
     email: user.email,
     role: user.role,
     childProfileId: user.childProfileId ?? null,
@@ -26,16 +29,17 @@ export function serializeUser(user) {
 export function serializeChild(child) {
   return {
     id: child.id,
-    name: decryptOptional(child.name, CRYPTO_KEYS.KEY_GENERAL),
+    name: decryptOptionalSafe(child.name, CRYPTO_KEYS.KEY_GENERAL, 'Dziecko'),
     dateOfBirth: child.dateOfBirth.toISOString(),
-    school: decryptOptional(child.school, CRYPTO_KEYS.KEY_GENERAL)
+    school: decryptOptionalSafe(child.school, CRYPTO_KEYS.KEY_GENERAL, '')
   };
 }
 
 export function serializeMessage(message) {
-  const attachmentsJson = decryptOptional(
+  const attachmentsJson = decryptOptionalSafe(
     message.attachmentsJson,
-    CRYPTO_KEYS.KEY_MESSAGES
+    CRYPTO_KEYS.KEY_MESSAGES,
+    '[]'
   );
   const attachments = parseStoredAttachments(attachmentsJson);
 
