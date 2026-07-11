@@ -1,36 +1,25 @@
 import express from 'express';
-import bcrypt from 'bcryptjs';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import {
-  buildAuthPayload,
-  createWorkspace,
-  findWorkspaceByChildInviteCode,
-  findWorkspaceByInviteCode,
-  assertParentInviteJoinAllowed,
-  getChildJoinPreview
-} from '../services/workspace.js';
-import { createSessionForUser, deleteAllSessionsForUser, deleteSession } from '../services/session.js';
-import {
-  createLoginOtpChallenge,
-  maskEmail,
-  requiresEmailOtp,
-  resendLoginOtpChallenge,
-  verifyLoginOtpChallenge,
-  invalidateUserSecurityArtifacts
-} from '../services/otp.service.js';
-import {
-  isTrustedDeviceValid,
-  readTrustedDeviceToken,
   TRUSTED_DEVICE_COOKIE,
   trustedDeviceCookieOptions
 } from '../services/trustedDevice.service.js';
 import {
-  saveRegistrationConsents,
-  validateRequiredConsents
-} from '../services/consent.service.js';
+  authenticateChildAccess,
+  buildSessionPayload,
+  changeUserPassword,
+  fetchChildJoinPreview,
+  getSessionPayload,
+  joinWorkspace,
+  loginUser,
+  logoutUser,
+  registerUser,
+  resendLoginOtp,
+  updateUserProfile,
+  verifyLoginOtp
+} from '../services/authService.js';
 
 const router = express.Router();
 
@@ -87,52 +76,22 @@ const childAccessSchema = z.object({
   name: z.string().trim().min(2).optional()
 });
 
-function parseDateOfBirth(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date;
-}
-
-function isSameCalendarDay(left, right) {
-  return (
-    left.getUTCFullYear() === right.getUTCFullYear() &&
-    left.getUTCMonth() === right.getUTCMonth() &&
-    left.getUTCDate() === right.getUTCDate()
-  );
-}
-
-function childAccountEmail(childProfileId) {
-  return `child+${childProfileId}@accounts.coparentes.internal`;
-}
-
-async function findChildByDateOfBirth(workspaceId, dateOfBirth) {
-  const children = await prisma.child.findMany({
-    where: { workspaceId },
-    include: { linkedAccount: true }
-  });
-
-  return children.filter((child) => isSameCalendarDay(child.dateOfBirth, dateOfBirth));
-}
-
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(8)
 });
 
 async function issueSessionResponse(user, statusCode, res, { trustedDeviceToken } = {}) {
-  const token = await createSessionForUser(user.id);
-  const { user: serializedUser, workspace } = await buildAuthPayload(user);
+  const payload = await buildSessionPayload(user);
 
   if (trustedDeviceToken) {
     res.cookie(TRUSTED_DEVICE_COOKIE, trustedDeviceToken, trustedDeviceCookieOptions());
   }
 
   return res.status(statusCode).json({
-    token,
-    user: serializedUser,
-    workspace,
+    token: payload.token,
+    user: payload.user,
+    workspace: payload.workspace,
     ...(trustedDeviceToken ? { trustedDeviceToken } : {})
   });
 }
@@ -140,47 +99,16 @@ async function issueSessionResponse(user, statusCode, res, { trustedDeviceToken 
 router.post('/register', authActionLimiter, async (req, res, next) => {
   try {
     const data = registerSchema.parse(req.body);
-
-    const consentCheck = validateRequiredConsents(data.consents);
-    if (!consentCheck.ok) {
-      return res.status(400).json({ error: consentCheck.error });
-    }
-
-    const existing = await prisma.user.findUnique({
-      where: { email: data.email }
-    });
-    if (existing) {
-      return res.status(409).json({ error: 'email_in_use' });
-    }
-
-    const passwordHash = await bcrypt.hash(data.password, 12);
-    const ipAddress = clientIp(req);
-
-    const user = await prisma.$transaction(async (tx) => {
-      const workspace = await createWorkspace({ name: data.workspaceName, client: tx });
-      const createdUser = await tx.user.create({
-        data: {
-          workspaceId: workspace.id,
-          name: data.name,
-          email: data.email,
-          passwordHash,
-          role: 'parentA',
-          twoFactorEnabled: false,
-          highConflictMode: false
-        }
-      });
-
-      await saveRegistrationConsents({
-        userId: createdUser.id,
-        consents: data.consents,
-        ipAddress,
-        client: tx
-      });
-
-      return createdUser;
+    const result = await registerUser({
+      ...data,
+      ipAddress: clientIp(req)
     });
 
-    return issueSessionResponse(user, 201, res);
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    return issueSessionResponse(result.user, result.status, res);
   } catch (error) {
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
@@ -195,12 +123,12 @@ router.get('/join-preview', authActionLimiter, async (req, res, next) => {
       childInviteCode: req.query.childInviteCode
     });
 
-    const preview = await getChildJoinPreview(data.childInviteCode);
-    if (!preview) {
-      return res.status(404).json({ error: 'workspace_not_found' });
+    const result = await fetchChildJoinPreview(data.childInviteCode);
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
     }
 
-    return res.json(preview);
+    return res.json(result.preview);
   } catch (error) {
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
@@ -212,61 +140,13 @@ router.get('/join-preview', authActionLimiter, async (req, res, next) => {
 router.post('/child/access', authActionLimiter, async (req, res, next) => {
   try {
     const data = childAccessSchema.parse(req.body);
-    const workspace = await findWorkspaceByChildInviteCode(data.childInviteCode);
+    const result = await authenticateChildAccess(data);
 
-    if (!workspace) {
-      return res.status(404).json({ error: 'workspace_not_found' });
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
     }
 
-    const dateOfBirth = parseDateOfBirth(data.dateOfBirth);
-    if (!dateOfBirth) {
-      return res.status(400).json({ error: 'invalid_date_of_birth' });
-    }
-
-    const matches = await findChildByDateOfBirth(workspace.id, dateOfBirth);
-    if (matches.length === 0) {
-      return res.status(404).json({ error: 'child_not_found' });
-    }
-    if (matches.length > 1) {
-      return res.status(409).json({ error: 'ambiguous_child_profile' });
-    }
-
-    const childProfile = matches[0];
-
-    if (childProfile.linkedAccount) {
-      const user = childProfile.linkedAccount;
-      if (!(await bcrypt.compare(data.password, user.passwordHash))) {
-        return res.status(401).json({ error: 'invalid_credentials' });
-      }
-
-      return issueSessionResponse(user, 200, res);
-    }
-
-    if (!data.name) {
-      return res.status(400).json({ error: 'child_name_required' });
-    }
-
-    const email = childAccountEmail(childProfile.id);
-    const existing = await prisma.user.findUnique({ where: { email } });
-    if (existing) {
-      return res.status(409).json({ error: 'child_profile_taken' });
-    }
-
-    const passwordHash = await bcrypt.hash(data.password, 12);
-    const user = await prisma.user.create({
-      data: {
-        workspaceId: workspace.id,
-        name: data.name,
-        email,
-        passwordHash,
-        role: 'child',
-        childProfileId: childProfile.id,
-        twoFactorEnabled: false,
-        highConflictMode: false
-      }
-    });
-
-    return issueSessionResponse(user, 201, res);
+    return issueSessionResponse(result.user, result.status, res);
   } catch (error) {
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
@@ -278,65 +158,13 @@ router.post('/child/access', authActionLimiter, async (req, res, next) => {
 router.post('/join', authActionLimiter, async (req, res, next) => {
   try {
     const data = joinSchema.parse(req.body);
+    const result = await joinWorkspace(data);
 
-    const existing = await prisma.user.findUnique({
-      where: { email: data.email }
-    });
-    if (existing) {
-      return res.status(409).json({ error: 'email_in_use' });
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
     }
 
-    const isChildJoin = Boolean(data.childInviteCode);
-    const workspace = isChildJoin
-      ? await findWorkspaceByChildInviteCode(data.childInviteCode)
-      : await findWorkspaceByInviteCode(data.inviteCode);
-
-    if (!workspace) {
-      return res.status(404).json({ error: 'workspace_not_found' });
-    }
-
-    if (!isChildJoin) {
-      const inviteCheck = await assertParentInviteJoinAllowed(workspace);
-      if (!inviteCheck.ok) {
-        const status = inviteCheck.error === 'workspace_not_found' ? 404 : 400;
-        return res.status(status).json({ error: inviteCheck.error });
-      }
-    }
-
-    if (isChildJoin) {
-      if (!data.childProfileId) {
-        return res.status(400).json({ error: 'child_profile_required' });
-      }
-
-      const childProfile = await prisma.child.findFirst({
-        where: { id: data.childProfileId, workspaceId: workspace.id },
-        include: { linkedAccount: true }
-      });
-
-      if (!childProfile) {
-        return res.status(400).json({ error: 'child_not_found' });
-      }
-
-      if (childProfile.linkedAccount) {
-        return res.status(409).json({ error: 'child_profile_taken' });
-      }
-    }
-
-    const passwordHash = await bcrypt.hash(data.password, 12);
-    const user = await prisma.user.create({
-      data: {
-        workspaceId: workspace.id,
-        name: data.name,
-        email: data.email,
-        passwordHash,
-        role: isChildJoin ? 'child' : 'parentB',
-        childProfileId: isChildJoin ? data.childProfileId : null,
-        twoFactorEnabled: false,
-        highConflictMode: false
-      }
-    });
-
-    return issueSessionResponse(user, 201, res);
+    return issueSessionResponse(result.user, result.status, res);
   } catch (error) {
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
@@ -348,46 +176,23 @@ router.post('/join', authActionLimiter, async (req, res, next) => {
 router.post('/login', authActionLimiter, async (req, res, next) => {
   try {
     const data = loginSchema.parse(req.body);
+    const result = await loginUser({ ...data, req });
 
-    const user = await prisma.user.findUnique({
-      where: { email: data.email }
-    });
-
-    if (!user || !(await bcrypt.compare(data.password, user.passwordHash))) {
-      return res.status(401).json({ error: 'invalid_credentials' });
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
     }
 
-    if (!user.workspaceId) {
-      return res.status(403).json({ error: 'user_missing_workspace' });
+    if (result.requiresOtp) {
+      return res.status(result.status).json({
+        requiresOtp: true,
+        challengeId: result.challengeId,
+        email: result.email,
+        expiresAt: result.expiresAt,
+        resendAvailableAt: result.resendAvailableAt
+      });
     }
 
-    const trustedToken = readTrustedDeviceToken(req);
-    if (
-      requiresEmailOtp(user) &&
-      !(await isTrustedDeviceValid(user.id, trustedToken))
-    ) {
-      try {
-        const { challenge, expiresAt, resendAvailableAt } =
-          await createLoginOtpChallenge(user);
-        return res.status(200).json({
-          requiresOtp: true,
-          challengeId: challenge.id,
-          email: maskEmail(user.email),
-          expiresAt: expiresAt.toISOString(),
-          resendAvailableAt: resendAvailableAt.toISOString()
-        });
-      } catch (error) {
-        if (
-          error?.code === 'email_not_configured' ||
-          error?.code === 'email_send_failed'
-        ) {
-          return res.status(503).json({ error: 'otp_email_failed' });
-        }
-        throw error;
-      }
-    }
-
-    return issueSessionResponse(user, 200, res);
+    return issueSessionResponse(result.user, result.status, res);
   } catch (error) {
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
@@ -408,30 +213,20 @@ const verifyOtpSchema = z.object({
 router.post('/login/verify-otp', authActionLimiter, async (req, res, next) => {
   try {
     const data = verifyOtpSchema.parse(req.body);
-    const result = await verifyLoginOtpChallenge({
-      challengeId: data.challengeId,
-      code: data.code,
-      trustDevice: data.trustDevice === true
-    });
+    const result = await verifyLoginOtp(data);
 
     if (result.error) {
       if (result.error === 'invalid_otp') {
-        return res.status(401).json({
+        return res.status(result.status).json({
           error: 'invalid_otp',
-          attemptsRemaining: result.attemptsRemaining ?? 0,
-          locked: result.locked === true
+          attemptsRemaining: result.attemptsRemaining,
+          locked: result.locked
         });
       }
-      if (result.error === 'otp_expired') {
-        return res.status(410).json({ error: 'otp_expired' });
-      }
-      if (result.error === 'otp_locked') {
-        return res.status(429).json({ error: 'otp_locked' });
-      }
-      return res.status(400).json({ error: result.error });
+      return res.status(result.status).json({ error: result.error });
     }
 
-    return issueSessionResponse(result.user, 200, res, {
+    return issueSessionResponse(result.user, result.status, res, {
       trustedDeviceToken: result.trustedDeviceToken
     });
   } catch (error) {
@@ -449,34 +244,23 @@ const resendOtpSchema = z.object({
 router.post('/login/resend-otp', authActionLimiter, async (req, res, next) => {
   try {
     const data = resendOtpSchema.parse(req.body);
-    let result;
-    try {
-      result = await resendLoginOtpChallenge(data.challengeId);
-    } catch (error) {
-      if (
-        error?.code === 'email_not_configured' ||
-        error?.code === 'email_send_failed'
-      ) {
-        return res.status(503).json({ error: 'otp_email_failed' });
-      }
-      throw error;
-    }
+    const result = await resendLoginOtp(data.challengeId);
 
     if (result.error) {
       if (result.error === 'resend_cooldown') {
-        return res.status(429).json({
+        return res.status(result.status).json({
           error: 'resend_cooldown',
-          resendAvailableAt: result.resendAvailableAt.toISOString()
+          resendAvailableAt: result.resendAvailableAt
         });
       }
-      return res.status(400).json({ error: result.error });
+      return res.status(result.status).json({ error: result.error });
     }
 
-    return res.status(200).json({
-      challengeId: result.challenge.id,
-      email: maskEmail(result.challenge.user?.email ?? ''),
-      expiresAt: result.expiresAt.toISOString(),
-      resendAvailableAt: result.resendAvailableAt.toISOString()
+    return res.status(result.status).json({
+      challengeId: result.challengeId,
+      email: result.email,
+      expiresAt: result.expiresAt,
+      resendAvailableAt: result.resendAvailableAt
     });
   } catch (error) {
     if (error?.name === 'ZodError') {
@@ -488,13 +272,8 @@ router.post('/login/resend-otp', authActionLimiter, async (req, res, next) => {
 
 router.get('/session', requireAuth, async (req, res, next) => {
   try {
-    const { user: serializedUser, workspace } = await buildAuthPayload(req.user);
-
-    return res.status(200).json({
-      token: req.sessionToken,
-      user: serializedUser,
-      workspace
-    });
+    const payload = await getSessionPayload(req.user, req.sessionToken);
+    return res.status(200).json(payload);
   } catch (error) {
     return next(error);
   }
@@ -502,7 +281,7 @@ router.get('/session', requireAuth, async (req, res, next) => {
 
 router.post('/logout', requireAuth, async (req, res, next) => {
   try {
-    await deleteSession(req.sessionToken);
+    await logoutUser(req.sessionToken);
     return res.status(204).send();
   } catch (error) {
     return next(error);
@@ -518,33 +297,16 @@ const profileSchema = z.object({
 router.patch('/profile', requireAuth, async (req, res, next) => {
   try {
     const data = profileSchema.parse(req.body);
-    const updates = {};
+    const result = await updateUserProfile(req.user.id, req.sessionToken, data);
 
-    if (data.name !== undefined) {
-      updates.name = data.name;
-    }
-    if (data.highConflictMode !== undefined) {
-      updates.highConflictMode = data.highConflictMode;
-    }
-    if (data.twoFactorEnabled !== undefined) {
-      updates.twoFactorEnabled = data.twoFactorEnabled;
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
     }
 
-    if (Object.keys(updates).length === 0) {
-      return res.status(400).json({ error: 'invalid_request' });
-    }
-
-    const user = await prisma.user.update({
-      where: { id: req.user.id },
-      data: updates
-    });
-
-    const { user: serializedUser, workspace } = await buildAuthPayload(user);
-
-    return res.status(200).json({
-      token: req.sessionToken,
-      user: serializedUser,
-      workspace
+    return res.status(result.status).json({
+      token: result.token,
+      user: result.user,
+      workspace: result.workspace
     });
   } catch (error) {
     if (error?.name === 'ZodError') {
@@ -562,24 +324,13 @@ const passwordSchema = z.object({
 router.post('/password', requireAuth, authActionLimiter, async (req, res, next) => {
   try {
     const data = passwordSchema.parse(req.body);
+    const result = await changeUserPassword(req.user.id, data);
 
-    const user = await prisma.user.findUnique({
-      where: { id: req.user.id }
-    });
-
-    if (!user || !(await bcrypt.compare(data.currentPassword, user.passwordHash))) {
-      return res.status(401).json({ error: 'invalid_credentials' });
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
     }
 
-    const passwordHash = await bcrypt.hash(data.newPassword, 12);
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { passwordHash }
-    });
-    await deleteAllSessionsForUser(user.id);
-    await invalidateUserSecurityArtifacts(user.id);
-
-    return res.status(200).json({ success: true });
+    return res.status(result.status).json({ success: result.success });
   } catch (error) {
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
