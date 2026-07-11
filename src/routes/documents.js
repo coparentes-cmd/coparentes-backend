@@ -1,7 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
-import { requireParentRole } from '../middleware/rbac.js';
+import { requireNonChildRole, requireParentRole } from '../middleware/rbac.js';
 import {
   createDocument,
   getDocumentDownload,
@@ -21,7 +21,7 @@ function decodedBase64ByteLength(base64) {
 
 router.use(requireAuth);
 
-router.get('/', async (req, res, next) => {
+router.get('/', requireNonChildRole, async (req, res, next) => {
   try {
     const documents = await listDocuments(req.user.workspaceId, req.user.id);
     return res.json({ documents });
@@ -30,7 +30,7 @@ router.get('/', async (req, res, next) => {
   }
 });
 
-router.get('/:documentId/download', async (req, res, next) => {
+router.get('/:documentId/download', requireNonChildRole, async (req, res, next) => {
   try {
     const payload = await getDocumentDownload(
       req.user.workspaceId,

@@ -1,7 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
-import { requireParentRole } from '../middleware/rbac.js';
+import { requireNonChildRole, requireParentRole } from '../middleware/rbac.js';
 import {
   createExportJob,
   getExportDownload,
@@ -13,7 +13,7 @@ const router = express.Router();
 router.use(requireAuth);
 
 // Specific path before any future /:id routes (Flutter: downloadExport)
-router.get('/:exportId/download', async (req, res, next) => {
+router.get('/:exportId/download', requireNonChildRole, async (req, res, next) => {
   try {
     const payload = await getExportDownload(
       req.user.workspaceId,
@@ -34,7 +34,7 @@ router.get('/:exportId/download', async (req, res, next) => {
   }
 });
 
-router.get('/', async (req, res, next) => {
+router.get('/', requireNonChildRole, async (req, res, next) => {
   try {
     const jobs = await listExportJobs(req.user.workspaceId);
     return res.json({ jobs });

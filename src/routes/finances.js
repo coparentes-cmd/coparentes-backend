@@ -1,7 +1,7 @@
 import express from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
-import { requireParentRole } from '../middleware/rbac.js';
+import { requireNonChildRole, requireParentRole } from '../middleware/rbac.js';
 import {
   createExpense,
   getExpenseReceipt,
@@ -14,7 +14,7 @@ const router = express.Router();
 
 router.use(requireAuth);
 
-router.get('/expenses', async (req, res, next) => {
+router.get('/expenses', requireNonChildRole, async (req, res, next) => {
   try {
     const expenses = await listExpenses(req.user.workspaceId);
     return res.json({ expenses });
@@ -56,7 +56,7 @@ router.post('/receipts/parse', requireParentRole, async (req, res, next) => {
   }
 });
 
-router.get('/expenses/:expenseId/receipt', async (req, res, next) => {
+router.get('/expenses/:expenseId/receipt', requireNonChildRole, async (req, res, next) => {
   try {
     const receipt = await getExpenseReceipt(
       req.user.workspaceId,
