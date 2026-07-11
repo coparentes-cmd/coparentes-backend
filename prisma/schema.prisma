@@ -239,7 +239,8 @@ model Document {
 
 /// Token sesji API (Bearer) — zamiast JWT; zgodne z Flutter AuthRepository.
 model Session {
-  token     String   @id
+  id        String   @id @default(cuid())
+  tokenHash String   @unique
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())

@@ -1,23 +1,23 @@
 import { prisma } from '../lib/prisma.js';
+import { readSessionToken } from '../services/sessionCookie.service.js';
+import {
+  deleteSession,
+  findSessionByToken
+} from '../services/session.js';
 
 export async function requireAuth(req, res, next) {
   try {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.startsWith('Bearer ')
-      ? authHeader.slice(7).trim()
-      : '';
+    const token = readSessionToken(req);
 
     if (!token) {
       return res.status(401).json({ error: 'missing_token' });
     }
 
-    const session = await prisma.session.findUnique({
-      where: { token }
-    });
+    const session = await findSessionByToken(token);
 
     if (!session || session.expiresAt < new Date()) {
       if (session) {
-        await prisma.session.delete({ where: { token } });
+        await deleteSession(token);
       }
       return res.status(401).json({ error: 'invalid_session' });
     }

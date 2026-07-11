@@ -7,6 +7,10 @@ import {
   trustedDeviceCookieOptions
 } from '../services/trustedDevice.service.js';
 import {
+  clearSessionCookie,
+  setSessionCookie
+} from '../services/sessionCookie.service.js';
+import {
   authenticateChildAccess,
   buildSessionPayload,
   changeUserPassword,
@@ -83,6 +87,8 @@ const loginSchema = z.object({
 
 async function issueSessionResponse(user, statusCode, res, { trustedDeviceToken } = {}) {
   const payload = await buildSessionPayload(user);
+
+  setSessionCookie(res, payload.token);
 
   if (trustedDeviceToken) {
     res.cookie(TRUSTED_DEVICE_COOKIE, trustedDeviceToken, trustedDeviceCookieOptions());
@@ -282,6 +288,7 @@ router.get('/session', requireAuth, async (req, res, next) => {
 router.post('/logout', requireAuth, async (req, res, next) => {
   try {
     await logoutUser(req.sessionToken);
+    clearSessionCookie(res);
     return res.status(204).send();
   } catch (error) {
     return next(error);

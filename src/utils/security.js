@@ -9,6 +9,14 @@ export function createInviteCode() {
   return crypto.randomBytes(16).toString('base64url').toUpperCase();
 }
 
+function sessionPepper() {
+  return env.sessionPepper || env.integritySecret || 'dev-session-pepper';
+}
+
+export function hashSessionToken(token) {
+  return crypto.createHmac('sha256', sessionPepper()).update(token).digest('hex');
+}
+
 export function createIntegrityHash(payload) {
   const data = JSON.stringify(payload);
   if (env.integritySecret) {

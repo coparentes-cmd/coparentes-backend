@@ -1,5 +1,5 @@
 import { prisma } from '../lib/prisma.js';
-import { createToken } from '../utils/security.js';
+import { createToken, hashSessionToken } from '../utils/security.js';
 import { env } from '../utils/env.js';
 
 const MAX_SESSIONS_PER_USER = 5;
@@ -14,7 +14,7 @@ export async function createSessionForUser(userId) {
     const removeCount = existing.length - MAX_SESSIONS_PER_USER + 1;
     await prisma.session.deleteMany({
       where: {
-        token: { in: existing.slice(0, removeCount).map((session) => session.token) }
+        id: { in: existing.slice(0, removeCount).map((session) => session.id) }
       }
     });
   }
@@ -26,7 +26,7 @@ export async function createSessionForUser(userId) {
 
   await prisma.session.create({
     data: {
-      token,
+      tokenHash: hashSessionToken(token),
       userId,
       expiresAt
     }
@@ -36,7 +36,9 @@ export async function createSessionForUser(userId) {
 }
 
 export async function deleteSession(token) {
-  await prisma.session.deleteMany({ where: { token } });
+  await prisma.session.deleteMany({
+    where: { tokenHash: hashSessionToken(token) }
+  });
 }
 
 export async function deleteAllSessionsForUser(userId) {
@@ -46,5 +48,11 @@ export async function deleteAllSessionsForUser(userId) {
 export async function purgeExpiredSessions() {
   await prisma.session.deleteMany({
     where: { expiresAt: { lt: new Date() } }
+  });
+}
+
+export async function findSessionByToken(token) {
+  return prisma.session.findUnique({
+    where: { tokenHash: hashSessionToken(token) }
   });
 }
