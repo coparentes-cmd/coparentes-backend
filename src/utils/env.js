@@ -39,6 +39,7 @@ export const env = {
   inviteExpiresDays: Number(process.env.INVITE_EXPIRES_DAYS || 7),
   parentInviteTtlHours: Number(process.env.PARENT_INVITE_TTL_HOURS || 24),
   integritySecret: process.env.INTEGRITY_SECRET || '',
+  sessionPepper: process.env.SESSION_PEPPER || process.env.INTEGRITY_SECRET || '',
   jwtSecret: process.env.JWT_SECRET || '',
   exportTtlDays: Number(process.env.EXPORT_TTL_DAYS || 30),
   forceHttps:
@@ -55,3 +56,34 @@ export const env = {
   otpResendCooldownSeconds: Number(process.env.OTP_RESEND_COOLDOWN_SECONDS || 60),
   trustedDeviceTtlDays: Number(process.env.TRUSTED_DEVICE_TTL_DAYS || 30)
 };
+
+const ENCRYPTION_KEY_NAMES = ['KEY_HEALTH', 'KEY_FINANCE', 'KEY_MESSAGES', 'KEY_GENERAL'];
+
+export function validateProductionEnv() {
+  if (env.nodeEnv !== 'production') {
+    return;
+  }
+
+  const errors = [];
+
+  if (env.allowSeed) {
+    errors.push('ALLOW_SEED must not be true in production');
+  }
+  if (env.seedDemoData) {
+    errors.push('SEED_DEMO_DATA must not be true in production');
+  }
+
+  for (const keyName of ENCRYPTION_KEY_NAMES) {
+    if (!env.encryptionKeys[keyName]?.trim()) {
+      errors.push(`${keyName} is required in production`);
+    }
+  }
+
+  if (!env.integritySecret?.trim()) {
+    errors.push('INTEGRITY_SECRET is required in production');
+  }
+
+  if (errors.length > 0) {
+    throw new Error(`Production environment check failed:\n- ${errors.join('\n- ')}`);
+  }
+}

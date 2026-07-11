@@ -80,7 +80,7 @@ export function createCorsMiddleware() {
       res.setHeader('Access-Control-Allow-Credentials', 'true');
       res.setHeader(
         'Access-Control-Allow-Headers',
-        'Authorization, Content-Type, Accept, Origin'
+        'Authorization, Content-Type, Accept, Origin, X-Trusted-Device-Token'
       );
       res.setHeader(
         'Access-Control-Allow-Methods',

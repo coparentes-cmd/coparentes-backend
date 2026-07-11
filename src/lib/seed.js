@@ -89,7 +89,12 @@ export async function seedDemoData(options = {}) {
     }
   }
 
-  const passwordHash = await bcrypt.hash('Coparentes!123', 12);
+  const demoPassword = process.env.SEED_DEMO_PASSWORD?.trim();
+  if (!demoPassword) {
+    throw new Error('SEED_DEMO_PASSWORD is required when seeding demo data');
+  }
+
+  const passwordHash = await bcrypt.hash(demoPassword, 12);
   const workspace = await prisma.workspace.create({
     data: {
       id: 'ws_kowalscy',

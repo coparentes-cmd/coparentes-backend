@@ -39,6 +39,22 @@ describe('Security headers middleware', () => {
       /max-age=31536000/
     );
   });
+
+  it('allows X-Trusted-Device-Token in CORS preflight', async () => {
+    const res = await request(server, 'OPTIONS', '/api/auth/login', {
+      headers: {
+        Origin: 'http://localhost:8080',
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'authorization, x-trusted-device-token'
+      }
+    });
+    assert.equal(res.status, 204);
+    assert.equal(res.headers['access-control-allow-origin'], 'http://localhost:8080');
+    assert.match(
+      String(res.headers['access-control-allow-headers'] ?? '').toLowerCase(),
+      /x-trusted-device-token/
+    );
+  });
 });
 
 describe('HTTPS enforcement in production mode', () => {

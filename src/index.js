@@ -1,6 +1,6 @@
 import { createApp } from './createApp.js';
 import { getCorsConfigSummary } from './middleware/cors.js';
-import { env } from './utils/env.js';
+import { env, validateProductionEnv } from './utils/env.js';
 import { isEmailDeliveryConfigured } from './utils/mailer.js';
 import { seedDemoData } from './lib/seed.js';
 import { purgeExpiredSessions } from './services/session.js';
@@ -28,6 +28,8 @@ function startPurgeInterval() {
 }
 
 async function start() {
+  validateProductionEnv();
+
   if (env.seedDemoData) {
     if (!env.allowSeed) {
       console.warn(

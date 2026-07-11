@@ -19,6 +19,8 @@ const recommended = [
   'INVITE_EXPIRES_DAYS'
 ];
 
+const ENCRYPTION_KEY_NAMES = ['KEY_HEALTH', 'KEY_FINANCE', 'KEY_MESSAGES', 'KEY_GENERAL'];
+
 let failed = false;
 
 for (const key of required) {
@@ -56,6 +58,29 @@ if (process.env.NODE_ENV === 'production') {
     console.warn(
       'WARN (production): PUBLIC_BASE_URL is not set — export download URLs may be relative.'
     );
+  }
+
+  if (process.env.ALLOW_SEED === 'true') {
+    console.error('FAIL (production): ALLOW_SEED must not be true');
+    failed = true;
+  }
+
+  if (process.env.SEED_DEMO_DATA === 'true') {
+    console.error('FAIL (production): SEED_DEMO_DATA must not be true');
+    failed = true;
+  }
+
+  if (!process.env.INTEGRITY_SECRET?.trim()) {
+    console.error('FAIL (production): INTEGRITY_SECRET is required');
+    failed = true;
+  }
+
+  for (const keyName of ENCRYPTION_KEY_NAMES) {
+    const envKey = keyName;
+    if (!process.env[envKey]?.trim()) {
+      console.error(`FAIL (production): ${envKey} is required`);
+      failed = true;
+    }
   }
 }
 
