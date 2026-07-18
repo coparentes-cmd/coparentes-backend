@@ -11,6 +11,7 @@ import financeRoutes from './routes/finances.js';
 import documentRoutes from './routes/documents.js';
 import workspaceRoutes from './routes/workspace.js';
 import { createCorsMiddleware } from './middleware/cors.js';
+import mongoSanitize from 'express-mongo-sanitize';
 import {
   applySecurityHeaders,
   enforceHttps,
@@ -43,6 +44,13 @@ export function createApp() {
   app.use(applySecurityHeaders);
   app.use(createCorsMiddleware());
   app.use(express.json({ limit: '1mb' }));
+  // Strip MongoDB / query-operator keys ($gt, $ne, …) from body, query, params.
+  app.use(
+    mongoSanitize({
+      replaceWith: '_',
+      allowDots: false
+    })
+  );
   app.use(morgan(env.nodeEnv === 'production' ? 'combined' : 'dev'));
 
   app.get('/health', (_req, res) => {
@@ -114,10 +122,14 @@ export function createApp() {
       return res.status(503).json({ error: 'encryption_not_configured' });
     }
 
+    if (error?.code === 'invalid_id') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+
     if (error?.name === 'ZodError') {
       return res.status(400).json({
         error: 'invalid_request',
-        details: error.flatten()
+        details: typeof error.flatten === 'function' ? error.flatten() : undefined
       });
     }
 

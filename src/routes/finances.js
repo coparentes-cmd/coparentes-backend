@@ -9,6 +9,7 @@ import {
   updateExpenseStatus
 } from '../services/finances.js';
 import { parseReceiptImage } from '../services/receiptOcr.js';
+import { entityIdSchema, optionalEntityIdSchema, parseEntityId } from '../utils/ids.js';
 
 const router = express.Router();
 
@@ -58,15 +59,19 @@ router.post('/receipts/parse', requireParentRole, async (req, res, next) => {
 
 router.get('/expenses/:expenseId/receipt', requireNonChildRole, async (req, res, next) => {
   try {
+    const expenseId = parseEntityId(req.params.expenseId, 'expenseId');
     const receipt = await getExpenseReceipt(
       req.user.workspaceId,
-      req.params.expenseId
+      expenseId
     );
     if (!receipt) {
       return res.status(404).json({ error: 'receipt_not_found' });
     }
     return res.json(receipt);
   } catch (error) {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
     return next(error);
   }
 });
@@ -78,8 +83,8 @@ router.post('/expenses', requireParentRole, async (req, res, next) => {
       amount: z.number().positive(),
       currency: z.string().min(3).max(3).optional(),
       category: z.string().min(1),
-      childId: z.string().nullable().optional(),
-      paidBy: z.string().min(1),
+      childId: optionalEntityIdSchema,
+      paidBy: entityIdSchema,
       splitRatio: z.number().min(0).max(1),
       date: z.string().datetime(),
       receiptUrl: z.string().nullable().optional(),
@@ -120,10 +125,11 @@ router.post('/expenses/:expenseId/status', requireParentRole, async (req, res, n
       note: z.string().max(2000).nullable().optional()
     });
     const data = schema.parse(req.body);
+    const expenseId = parseEntityId(req.params.expenseId, 'expenseId');
 
     const expense = await updateExpenseStatus({
       workspaceId: req.user.workspaceId,
-      expenseId: req.params.expenseId,
+      expenseId,
       status: data.status,
       note: data.note
     });
@@ -134,7 +140,7 @@ router.post('/expenses/:expenseId/status', requireParentRole, async (req, res, n
 
     return res.json(expense);
   } catch (error) {
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);

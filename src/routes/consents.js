@@ -28,7 +28,11 @@ const updateConsentSchema = z.object({
 
 router.patch('/:consentType', requireAuth, async (req, res, next) => {
   try {
-    const consentType = req.params.consentType?.toUpperCase();
+    const consentTypeRaw = req.params.consentType;
+    if (typeof consentTypeRaw !== 'string') {
+      return res.status(400).json({ error: 'invalid_consent_type' });
+    }
+    const consentType = consentTypeRaw.toUpperCase();
     if (!ALL_CONSENT_TYPES.includes(consentType)) {
       return res.status(400).json({ error: 'invalid_consent_type' });
     }

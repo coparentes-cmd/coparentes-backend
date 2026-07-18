@@ -88,4 +88,17 @@ describe('Security guards (no DB)', () => {
     assert.equal(res.status, 400);
     assert.equal(res.json.error, 'invalid_request');
   });
+
+  it('POST /api/auth/login — operator-shaped body fields are rejected', async () => {
+    const res = await request(server, 'POST', '/api/auth/login', {
+      body: { email: { $ne: null }, password: { $gt: '' } }
+    });
+    assert.equal(res.status, 400);
+    assert.equal(res.json.error, 'invalid_request');
+  });
+
+  it('GET /api/threads/:threadId — operator-like id path returns 400 or 401', async () => {
+    const res = await request(server, 'GET', '/api/threads/$ne');
+    assert.ok(res.status === 400 || res.status === 401);
+  });
 });

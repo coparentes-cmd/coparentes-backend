@@ -1,5 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import { createIntegrityHash } from '../utils/security.js';
+import { requireEntityId } from '../utils/ids.js';
 import { CRYPTO_KEYS, decryptOptional, encryptOptional } from './crypto.service.js';
 import { serializeThread } from './serializers.js';
 import {
@@ -80,8 +81,10 @@ export async function getThreadById(
   viewerUserId,
   userRole = 'parentA'
 ) {
+  const safeThreadId = requireEntityId(threadId, 'threadId');
+  const safeWorkspaceId = requireEntityId(workspaceId, 'workspaceId');
   const thread = await prisma.thread.findFirst({
-    where: { id: threadId, workspaceId },
+    where: { id: safeThreadId, workspaceId: safeWorkspaceId },
     include: {
       messages: { orderBy: { sentAt: 'asc' } }
     }
@@ -142,9 +145,11 @@ export async function createThread({
     return getOrCreateCategoryThread({ workspaceId, createdBy, category });
   }
 
+  let safeChildId = null;
   if (childId) {
+    safeChildId = requireEntityId(childId, 'childId');
     const child = await prisma.child.findFirst({
-      where: { id: childId, workspaceId }
+      where: { id: safeChildId, workspaceId }
     });
     if (!child) {
       const error = new Error('child_not_found');
@@ -158,7 +163,7 @@ export async function createThread({
       workspaceId,
       subject,
       category,
-      childId: childId ?? null,
+      childId: safeChildId,
       createdById: createdBy.id,
       audience: 'parents',
       lastActivity: new Date()
@@ -209,8 +214,12 @@ export async function markThreadAsRead({
   userId,
   userRole = 'parentA'
 }) {
+  const safeThreadId = requireEntityId(threadId, 'threadId');
+  const safeWorkspaceId = requireEntityId(workspaceId, 'workspaceId');
+  const safeUserId = requireEntityId(userId, 'userId');
+
   const thread = await prisma.thread.findFirst({
-    where: { id: threadId, workspaceId }
+    where: { id: safeThreadId, workspaceId: safeWorkspaceId }
   });
 
   if (!thread || !canUserAccessThread(userRole, thread)) {
@@ -219,15 +228,15 @@ export async function markThreadAsRead({
 
   await prisma.message.updateMany({
     where: {
-      threadId,
-      workspaceId,
-      senderId: { not: userId },
+      threadId: safeThreadId,
+      workspaceId: safeWorkspaceId,
+      senderId: { not: safeUserId },
       isRead: false
     },
     data: { isRead: true }
   });
 
-  return getThreadById(workspaceId, threadId, userId, userRole);
+  return getThreadById(safeWorkspaceId, safeThreadId, safeUserId, userRole);
 }
 
 export async function addMessageToThread({
@@ -238,8 +247,11 @@ export async function addMessageToThread({
   tone = 'neutral',
   attachments = []
 }) {
+  const safeThreadId = requireEntityId(threadId, 'threadId');
+  const safeWorkspaceId = requireEntityId(workspaceId, 'workspaceId');
+
   const thread = await prisma.thread.findFirst({
-    where: { id: threadId, workspaceId }
+    where: { id: safeThreadId, workspaceId: safeWorkspaceId }
   });
 
   if (!thread || !canUserSendMessage(sender.role, thread)) {
@@ -305,8 +317,13 @@ export async function getMessageAttachmentDownload({
   attachmentId,
   userRole = 'parentA'
 }) {
+  const safeThreadId = requireEntityId(threadId, 'threadId');
+  const safeWorkspaceId = requireEntityId(workspaceId, 'workspaceId');
+  const safeMessageId = requireEntityId(messageId, 'messageId');
+  const safeAttachmentId = requireEntityId(attachmentId, 'attachmentId');
+
   const thread = await prisma.thread.findFirst({
-    where: { id: threadId, workspaceId }
+    where: { id: safeThreadId, workspaceId: safeWorkspaceId }
   });
 
   if (!thread || !canUserAccessThread(userRole, thread)) {
@@ -315,9 +332,9 @@ export async function getMessageAttachmentDownload({
 
   const message = await prisma.message.findFirst({
     where: {
-      id: messageId,
-      threadId,
-      workspaceId
+      id: safeMessageId,
+      threadId: safeThreadId,
+      workspaceId: safeWorkspaceId
     }
   });
 
@@ -328,7 +345,7 @@ export async function getMessageAttachmentDownload({
   const attachments = parseStoredAttachments(
     decryptOptional(message.attachmentsJson, CRYPTO_KEYS.KEY_MESSAGES)
   );
-  const attachment = attachments.find((item) => item.id === attachmentId);
+  const attachment = attachments.find((item) => item.id === safeAttachmentId);
   if (!attachment?.contentBase64) {
     return null;
   }

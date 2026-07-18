@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma.js';
+import { requireEntityId } from '../utils/ids.js';
 
 const MAX_TAGS_PER_MESSAGE = 10;
 const MAX_TAG_LENGTH = 40;
@@ -11,8 +12,10 @@ function normalizeTag(tag) {
 }
 
 export async function listMessageTagsForUser({ workspaceId, userId }) {
+  const safeWorkspaceId = requireEntityId(workspaceId, 'workspaceId');
+  const safeUserId = requireEntityId(userId, 'userId');
   const rows = await prisma.messageUserTag.findMany({
-    where: { workspaceId, userId },
+    where: { workspaceId: safeWorkspaceId, userId: safeUserId },
     orderBy: { createdAt: 'asc' },
     select: {
       messageId: true,
@@ -34,8 +37,12 @@ export async function setMessageTagsForUser({
   messageId,
   tags
 }) {
+  const safeWorkspaceId = requireEntityId(workspaceId, 'workspaceId');
+  const safeUserId = requireEntityId(userId, 'userId');
+  const safeMessageId = requireEntityId(messageId, 'messageId');
+
   const message = await prisma.message.findFirst({
-    where: { id: messageId, workspaceId },
+    where: { id: safeMessageId, workspaceId: safeWorkspaceId },
     select: { id: true, threadId: true }
   });
 
@@ -55,15 +62,15 @@ export async function setMessageTagsForUser({
 
   await prisma.$transaction([
     prisma.messageUserTag.deleteMany({
-      where: { userId, messageId }
+      where: { userId: safeUserId, messageId: safeMessageId }
     }),
     ...(normalized.length > 0
       ? [
           prisma.messageUserTag.createMany({
             data: normalized.map((tag) => ({
-              workspaceId,
-              userId,
-              messageId,
+              workspaceId: safeWorkspaceId,
+              userId: safeUserId,
+              messageId: safeMessageId,
               threadId: message.threadId,
               tag
             }))
@@ -72,5 +79,8 @@ export async function setMessageTagsForUser({
       : [])
   ]);
 
-  return listMessageTagsForUser({ workspaceId, userId });
+  return listMessageTagsForUser({
+    workspaceId: safeWorkspaceId,
+    userId: safeUserId
+  });
 }

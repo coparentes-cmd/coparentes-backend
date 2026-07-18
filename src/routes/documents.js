@@ -8,6 +8,7 @@ import {
   isAllowedDocumentCategory,
   listDocuments
 } from '../services/documents.js';
+import { optionalEntityIdSchema, parseEntityId } from '../utils/ids.js';
 
 const router = express.Router();
 
@@ -32,9 +33,10 @@ router.get('/', requireNonChildRole, async (req, res, next) => {
 
 router.get('/:documentId/download', requireNonChildRole, async (req, res, next) => {
   try {
+    const documentId = parseEntityId(req.params.documentId, 'documentId');
     const payload = await getDocumentDownload(
       req.user.workspaceId,
-      req.params.documentId,
+      documentId,
       req.user.id
     );
 
@@ -44,6 +46,9 @@ router.get('/:documentId/download', requireNonChildRole, async (req, res, next) 
 
     return res.json(payload);
   } catch (error) {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
     return next(error);
   }
 });
@@ -53,7 +58,7 @@ router.post('/', requireParentRole, async (req, res, next) => {
     const schema = z.object({
       title: z.string().trim().min(1).max(200),
       category: z.string().trim().min(1).max(50),
-      childId: z.string().nullable().optional(),
+      childId: optionalEntityIdSchema,
       fileName: z.string().trim().min(1).max(255).nullable().optional(),
       mimeType: z.string().trim().min(1).max(120).nullable().optional(),
       fileUrl: z.string().url().nullable().optional(),

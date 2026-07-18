@@ -16,6 +16,7 @@ import {
   listMessageTagsForUser,
   setMessageTagsForUser
 } from '../services/messageTags.js';
+import { entityIdSchema, optionalEntityIdSchema, parseEntityId } from '../utils/ids.js';
 
 const router = express.Router();
 
@@ -42,10 +43,11 @@ router.put('/messages/:messageId/tags', requireParentRole, async (req, res, next
       tags: z.array(z.string().min(1).max(40)).max(10)
     });
     const data = schema.parse(req.body);
+    const messageId = parseEntityId(req.params.messageId, 'messageId');
     const messageTags = await setMessageTagsForUser({
       workspaceId: req.user.workspaceId,
       userId: req.user.id,
-      messageId: req.params.messageId,
+      messageId,
       tags: data.tags
     });
     return res.json({ messageTags });
@@ -53,7 +55,7 @@ router.put('/messages/:messageId/tags', requireParentRole, async (req, res, next
     if (error?.code === 'message_not_found') {
       return res.status(404).json({ error: 'message_not_found' });
     }
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
@@ -65,7 +67,7 @@ router.post('/', requireParentRole, async (req, res, next) => {
     const schema = z.object({
       subject: z.string().min(3),
       category: z.string().min(2),
-      childId: z.string().nullable().optional()
+      childId: optionalEntityIdSchema
     });
     const data = schema.parse(req.body);
 
@@ -128,7 +130,7 @@ router.post('/channel', requireParentRole, async (req, res, next) => {
 });
 
 const attachmentSchema = z.object({
-  id: z.string().trim().min(1).max(80),
+  id: entityIdSchema,
   name: z.string().trim().min(1).max(255),
   type: z.string().trim().min(1).max(120),
   sizeBytes: z.number().int().positive().max(262144),
@@ -139,11 +141,14 @@ router.get(
   '/:threadId/messages/:messageId/attachments/:attachmentId',
   async (req, res, next) => {
     try {
+      const threadId = parseEntityId(req.params.threadId, 'threadId');
+      const messageId = parseEntityId(req.params.messageId, 'messageId');
+      const attachmentId = parseEntityId(req.params.attachmentId, 'attachmentId');
       const attachment = await getMessageAttachmentDownload({
         workspaceId: req.user.workspaceId,
-        threadId: req.params.threadId,
-        messageId: req.params.messageId,
-        attachmentId: req.params.attachmentId,
+        threadId,
+        messageId,
+        attachmentId,
         userRole: req.user.role
       });
 
@@ -153,6 +158,9 @@ router.get(
 
       return res.json(attachment);
     } catch (error) {
+      if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
+        return res.status(400).json({ error: 'invalid_request' });
+      }
       return next(error);
     }
   }
@@ -166,6 +174,7 @@ router.post('/:threadId/messages', requireParentOrChildMessage, async (req, res,
       attachments: z.array(attachmentSchema).max(3).optional()
     });
     const data = schema.parse(req.body);
+    const threadId = parseEntityId(req.params.threadId, 'threadId');
 
     if (!data.content.trim() && (data.attachments?.length ?? 0) === 0) {
       return res.status(400).json({ error: 'message_empty' });
@@ -173,7 +182,7 @@ router.post('/:threadId/messages', requireParentOrChildMessage, async (req, res,
 
     const thread = await addMessageToThread({
       workspaceId: req.user.workspaceId,
-      threadId: req.params.threadId,
+      threadId,
       sender: req.user,
       content: data.content,
       tone: data.tone ?? 'neutral',
@@ -195,7 +204,7 @@ router.post('/:threadId/messages', requireParentOrChildMessage, async (req, res,
     if (error?.code === 'too_many_attachments' || error?.code === 'invalid_attachment') {
       return res.status(400).json({ error: error.code });
     }
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
@@ -204,9 +213,10 @@ router.post('/:threadId/messages', requireParentOrChildMessage, async (req, res,
 
 router.get('/:threadId', async (req, res, next) => {
   try {
+    const threadId = parseEntityId(req.params.threadId, 'threadId');
     const thread = await getThreadById(
       req.user.workspaceId,
-      req.params.threadId,
+      threadId,
       req.user.id,
       req.user.role
     );
@@ -215,15 +225,19 @@ router.get('/:threadId', async (req, res, next) => {
     }
     return res.json(thread);
   } catch (error) {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
     return next(error);
   }
 });
 
 router.post('/:threadId/read', async (req, res, next) => {
   try {
+    const threadId = parseEntityId(req.params.threadId, 'threadId');
     const thread = await markThreadAsRead({
       workspaceId: req.user.workspaceId,
-      threadId: req.params.threadId,
+      threadId,
       userId: req.user.id,
       userRole: req.user.role
     });
@@ -234,6 +248,9 @@ router.post('/:threadId/read', async (req, res, next) => {
 
     return res.json(thread);
   } catch (error) {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
     return next(error);
   }
 });

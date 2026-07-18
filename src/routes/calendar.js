@@ -16,6 +16,7 @@ import {
   respondToCustodySchedule,
   updateCustodySlotHandover
 } from '../services/custodySchedule.js';
+import { optionalEntityIdSchema, parseEntityId } from '../utils/ids.js';
 
 const router = express.Router();
 
@@ -67,7 +68,7 @@ router.post('/schedules', requireParentRole, async (req, res, next) => {
     if (error?.code === 'invalid_date_range') {
       return res.status(400).json({ error: 'invalid_date_range' });
     }
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
@@ -81,10 +82,11 @@ router.post('/schedules/:scheduleId/respond', requireParentRole, async (req, res
       responseNote: z.string().max(1000).nullable().optional()
     });
     const data = schema.parse(req.body);
+    const scheduleId = parseEntityId(req.params.scheduleId, 'scheduleId');
 
     const schedule = await respondToCustodySchedule({
       workspaceId: req.user.workspaceId,
-      scheduleId: req.params.scheduleId,
+      scheduleId,
       responder: req.user,
       approve: data.approve,
       responseNote: data.responseNote
@@ -102,7 +104,7 @@ router.post('/schedules/:scheduleId/respond', requireParentRole, async (req, res
     if (error?.code === 'schedule_not_pending') {
       return res.status(409).json({ error: 'schedule_not_pending' });
     }
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
@@ -141,7 +143,7 @@ router.post('/exceptions', requireParentRole, async (req, res, next) => {
     if (error?.code === 'invalid_date_range') {
       return res.status(400).json({ error: 'invalid_date_range' });
     }
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
@@ -155,10 +157,11 @@ router.post('/exceptions/:exceptionId/respond', requireParentRole, async (req, r
       responseNote: z.string().max(1000).nullable().optional()
     });
     const data = schema.parse(req.body);
+    const exceptionId = parseEntityId(req.params.exceptionId, 'exceptionId');
 
     const exception = await respondToCustodyException({
       workspaceId: req.user.workspaceId,
-      exceptionId: req.params.exceptionId,
+      exceptionId,
       responder: req.user,
       approve: data.approve,
       responseNote: data.responseNote
@@ -176,7 +179,7 @@ router.post('/exceptions/:exceptionId/respond', requireParentRole, async (req, r
     if (error?.code === 'exception_not_pending') {
       return res.status(409).json({ error: 'exception_not_pending' });
     }
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
@@ -190,10 +193,11 @@ router.patch('/slots/:slotId', requireParentRole, async (req, res, next) => {
       handoverLocation: z.string().max(500).nullable().optional()
     });
     const data = schema.parse(req.body);
+    const slotId = parseEntityId(req.params.slotId, 'slotId');
 
     const slot = await updateCustodySlotHandover({
       workspaceId: req.user.workspaceId,
-      slotId: req.params.slotId,
+      slotId,
       handoverTime: data.handoverTime,
       handoverLocation: data.handoverLocation,
       user: req.user
@@ -211,7 +215,7 @@ router.patch('/slots/:slotId', requireParentRole, async (req, res, next) => {
     if (error?.code === 'schedule_locked') {
       return res.status(409).json({ error: 'schedule_locked' });
     }
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
@@ -226,7 +230,7 @@ router.post('/events', requireParentRole, async (req, res, next) => {
       startDate: z.string().datetime(),
       endDate: z.string().datetime().nullable().optional(),
       type: z.enum(['school', 'medical', 'activity', 'handover', 'holiday', 'other']),
-      childId: z.string().nullable().optional(),
+      childId: optionalEntityIdSchema,
       location: z.string().max(500).nullable().optional()
     });
     const data = schema.parse(req.body);
@@ -242,7 +246,7 @@ router.post('/events', requireParentRole, async (req, res, next) => {
     if (error?.code === 'child_not_found') {
       return res.status(400).json({ error: 'child_not_found' });
     }
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
@@ -257,14 +261,15 @@ router.patch('/events/:eventId', requireParentRole, async (req, res, next) => {
       startDate: z.string().datetime(),
       endDate: z.string().datetime().nullable().optional(),
       type: z.enum(['school', 'medical', 'activity', 'handover', 'holiday', 'other']),
-      childId: z.string().nullable().optional(),
+      childId: optionalEntityIdSchema,
       location: z.string().max(500).nullable().optional()
     });
     const data = schema.parse(req.body);
+    const eventId = parseEntityId(req.params.eventId, 'eventId');
 
     const event = await updateCalendarEvent({
       workspaceId: req.user.workspaceId,
-      eventId: req.params.eventId,
+      eventId,
       ...data
     });
 
@@ -276,7 +281,7 @@ router.patch('/events/:eventId', requireParentRole, async (req, res, next) => {
     if (error?.code === 'child_not_found') {
       return res.status(400).json({ error: 'child_not_found' });
     }
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
@@ -300,7 +305,7 @@ router.post('/swaps', requireParentRole, async (req, res, next) => {
 
     return res.status(201).json(swap);
   } catch (error) {
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
@@ -314,10 +319,11 @@ router.post('/swaps/:swapId/respond', requireParentRole, async (req, res, next) 
       responseNote: z.string().max(1000).nullable().optional()
     });
     const data = schema.parse(req.body);
+    const swapId = parseEntityId(req.params.swapId, 'swapId');
 
     const swap = await respondToSwapRequest({
       workspaceId: req.user.workspaceId,
-      swapId: req.params.swapId,
+      swapId,
       status: data.status,
       responseNote: data.responseNote,
       responder: req.user
@@ -332,7 +338,7 @@ router.post('/swaps/:swapId/respond', requireParentRole, async (req, res, next) 
     if (error?.code === 'swap_not_allowed') {
       return res.status(403).json({ error: 'swap_not_allowed' });
     }
-    if (error?.name === 'ZodError') {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);

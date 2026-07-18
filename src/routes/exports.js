@@ -7,6 +7,7 @@ import {
   getExportDownload,
   listExportJobs
 } from '../services/exports.js';
+import { optionalEntityIdSchema, parseEntityId } from '../utils/ids.js';
 
 const router = express.Router();
 
@@ -15,9 +16,10 @@ router.use(requireAuth);
 // Specific path before any future /:id routes (Flutter: downloadExport)
 router.get('/:exportId/download', requireNonChildRole, async (req, res, next) => {
   try {
+    const exportId = parseEntityId(req.params.exportId, 'exportId');
     const payload = await getExportDownload(
       req.user.workspaceId,
-      req.params.exportId
+      exportId
     );
 
     if (!payload) {
@@ -30,6 +32,9 @@ router.get('/:exportId/download', requireNonChildRole, async (req, res, next) =>
 
     return res.json(payload);
   } catch (error) {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
     return next(error);
   }
 });
@@ -49,7 +54,7 @@ router.post('/', requireParentRole, async (req, res, next) => {
       type: z.enum(['messages', 'calendar', 'finances', 'fullPack']),
       fromDate: z.string(),
       toDate: z.string(),
-      threadId: z.string().nullable().optional()
+      threadId: optionalEntityIdSchema
     });
     const data = schema.parse(req.body);
 

@@ -1,12 +1,13 @@
 import bcrypt from 'bcryptjs';
-import crypto from 'crypto';
 import { prisma } from '../lib/prisma.js';
 import { env } from '../utils/env.js';
+import { requireEntityId } from '../utils/ids.js';
 import { createToken } from '../utils/security.js';
 
 export const TRUSTED_DEVICE_COOKIE = 'coparentes_trusted_device';
 
 export async function createTrustedDeviceToken(userId) {
+  const safeUserId = requireEntityId(userId, 'userId');
   const token = createToken(32);
   const tokenHash = await bcrypt.hash(token, 12);
   const expiresAt = new Date(
@@ -15,7 +16,7 @@ export async function createTrustedDeviceToken(userId) {
 
   await prisma.trustedDevice.create({
     data: {
-      userId,
+      userId: safeUserId,
       tokenHash,
       expiresAt
     }
@@ -47,14 +48,17 @@ export function readTrustedDeviceToken(req) {
 }
 
 export async function isTrustedDeviceValid(userId, token) {
-  if (!token) {
+  if (!token || typeof token !== 'string') {
     return false;
   }
 
+  const safeUserId = requireEntityId(userId, 'userId');
+  const now = new Date();
+
   const devices = await prisma.trustedDevice.findMany({
     where: {
-      userId,
-      expiresAt: { gt: new Date() }
+      userId: safeUserId,
+      expiresAt: { gt: now }
     }
   });
 
@@ -68,7 +72,8 @@ export async function isTrustedDeviceValid(userId, token) {
 }
 
 export async function deleteAllTrustedDevicesForUser(userId) {
-  await prisma.trustedDevice.deleteMany({ where: { userId } });
+  const safeUserId = requireEntityId(userId, 'userId');
+  await prisma.trustedDevice.deleteMany({ where: { userId: safeUserId } });
 }
 
 export function trustedDeviceCookieOptions() {
