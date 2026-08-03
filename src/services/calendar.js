@@ -6,7 +6,7 @@ import {
 import {
   CRYPTO_KEYS,
   calendarEventKey,
-  decryptOptional,
+  decryptOptionalSafe,
   encryptOptional
 } from './crypto.service.js';
 import {
@@ -170,8 +170,8 @@ export function serializeCalendarEvent(event) {
   const key = calendarEventKey(event.type);
   return {
     id: event.id,
-    title: decryptOptional(event.title, key),
-    description: decryptOptional(event.description, key),
+    title: decryptOptionalSafe(event.title, key, ''),
+    description: decryptOptionalSafe(event.description, key, null),
     startDate: event.startDate.toISOString(),
     endDate: event.endDate ? event.endDate.toISOString() : null,
     type: event.type,
@@ -198,7 +198,7 @@ export function serializeSwapRequest(swap) {
 export function serializeExpense(expense) {
   return {
     id: expense.id,
-    title: decryptOptional(expense.title, CRYPTO_KEYS.KEY_FINANCE),
+    title: decryptOptionalSafe(expense.title, CRYPTO_KEYS.KEY_FINANCE, ''),
     amount: expense.amount,
     currency: expense.currency,
     category: expense.category,
@@ -209,7 +209,7 @@ export function serializeExpense(expense) {
     receiptUrl: expense.receiptUrl,
     hasReceipt: Boolean(expense.receiptContentBase64),
     status: expense.status,
-    note: decryptOptional(expense.note, CRYPTO_KEYS.KEY_FINANCE),
+    note: decryptOptionalSafe(expense.note, CRYPTO_KEYS.KEY_FINANCE, null),
     hash: expense.hash
   };
 }
