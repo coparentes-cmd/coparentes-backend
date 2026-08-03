@@ -222,6 +222,7 @@ describe('E2E flow (register → join → thread → message → export → down
     const lastMessage = sendMessage.json.messages.at(-1);
     assert.equal(lastMessage.content, 'Wiadomość E2E od parentB');
     assert.equal(lastMessage.tone, 'neutral');
+    assert.equal(lastMessage.isRead, false, 'just-sent message must not be read yet');
     assert.ok(lastMessage.hash);
 
     // 4b. Parent A sends — Parent B must see the message
@@ -234,6 +235,25 @@ describe('E2E flow (register → join → thread → message → export → down
     });
     assert.equal(sendFromA.status, 201);
     assert.equal(sendFromA.json.messages.at(-1).content, 'Wiadomość E2E od parentA');
+    assert.equal(
+      sendFromA.json.messages.at(-1).isRead,
+      false,
+      'parentA just-sent message must start unread'
+    );
+
+    const markBySender = await request(server, 'POST', `/api/threads/${threadId}/read`, {
+      token: tokenA
+    });
+    assert.equal(markBySender.status, 200);
+    const ownAfterSelfRead = markBySender.json.messages.find(
+      (m) => m.content === 'Wiadomość E2E od parentA'
+    );
+    assert.ok(ownAfterSelfRead);
+    assert.equal(
+      ownAfterSelfRead.isRead,
+      false,
+      'sender marking thread as read must not mark own outgoing messages'
+    );
 
     const listAsB = await request(server, 'GET', '/api/threads', {
       token: tokenB
