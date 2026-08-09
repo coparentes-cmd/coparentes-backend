@@ -212,6 +212,7 @@ export async function sendTempPasswordEmail({ to, tempPassword }) {
       text:
         `Twoje jednorazowe hasło do Coparentes:\n\n` +
         `${tempPassword}\n\n` +
+        `Skopiuj hasło w całości, bez spacji.\n` +
         `1. Zaloguj się tym hasłem na https://getcoparentes.app\n` +
         `2. Wejdź w Ustawienia → Zmień hasło\n` +
         `3. Ustaw własne, nowe hasło\n\n` +
@@ -220,7 +221,10 @@ export async function sendTempPasswordEmail({ to, tempPassword }) {
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111111; max-width: 520px;">
           <h2 style="color: #00C896; margin-bottom: 8px;">Coparentes</h2>
           <p>Oto Twoje <strong>jednorazowe hasło</strong> do logowania:</p>
-          <p style="font-size: 22px; font-weight: 700; letter-spacing: 1px; margin: 16px 0; padding: 12px 16px; background: #F3F4F6; border-radius: 10px; display: inline-block;">${safePassword}</p>
+          <p style="margin: 16px 0;">
+            <code style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 20px; font-weight: 700; letter-spacing: normal; padding: 12px 16px; background: #F3F4F6; border-radius: 10px; display: inline-block; user-select: all;">${safePassword}</code>
+          </p>
+          <p style="color: #5F6673; font-size: 13px;">Skopiuj hasło w całości, bez spacji (najpewniej z wersji tekstowej maila).</p>
           <ol style="color: #111111; padding-left: 18px;">
             <li>Zaloguj się tym hasłem w aplikacji</li>
             <li>Wejdź w <strong>Ustawienia → Zmień hasło</strong></li>

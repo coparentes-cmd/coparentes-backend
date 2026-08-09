@@ -249,7 +249,9 @@ export async function loginUser({ email, password, req }) {
     where: { email }
   });
 
-  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+  // Tolerate copy/paste whitespace from email clients.
+  const candidate = String(password || '').replace(/\s+/g, '');
+  if (!user || !(await bcrypt.compare(candidate, user.passwordHash))) {
     return { error: 'invalid_credentials', status: 401 };
   }
 
@@ -419,21 +421,21 @@ export async function changeUserPassword(userId, { currentPassword, newPassword 
 }
 
 function generateTempPassword() {
-  // Readable, 12+ chars — meets app min length (10).
+  // Readable, 12+ chars — meets app min length (10). No hyphens (copy/paste safe).
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
   let body = '';
-  const bytes = crypto.randomBytes(10);
+  const bytes = crypto.randomBytes(12);
   for (let i = 0; i < bytes.length; i += 1) {
     body += alphabet[bytes[i] % alphabet.length];
   }
-  return `Tmp-${body}`;
+  return `Tmp${body}`;
 }
 
 /**
  * Issue a one-time temporary password by e-mail.
  * Always returns a generic success payload (no account enumeration).
- * Sends the e-mail first, then updates the hash — avoids rollback races where
- * Resend delivers after a timeout and the temp password no longer matches.
+ * Updates the hash first so a delivered mail always matches the DB.
+ * Rolls back only on definite mail failure (not on provider timeout).
  */
 export async function requestPasswordReset(email) {
   const normalized = String(email || '').trim().toLowerCase();
@@ -448,7 +450,17 @@ export async function requestPasswordReset(email) {
     return generic;
   }
 
+  const previousHash = user.passwordHash;
   const tempPassword = generateTempPassword();
+  const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash }
+  });
+  await deleteAllSessionsForUser(user.id);
+  await invalidateUserSecurityArtifacts(user.id);
+
   const emailResult = await sendTempPasswordEmail({
     to: user.email,
     tempPassword
@@ -467,26 +479,26 @@ export async function requestPasswordReset(email) {
       'userId=',
       user.id
     );
+
+    // Timeout: keep the new hash — Resend may still deliver. Other errors: restore.
+    if (code !== 'email_send_timeout') {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { passwordHash: previousHash }
+      });
+    }
+
     return {
       error:
         code === 'email_not_configured' || code === 'email_send_timeout'
           ? code
           : 'otp_email_failed',
       status: 503,
-      // Safe provider hint for operators (no secrets). Helps diagnose Resend domain/key issues.
       reason: providerMessage
         ? String(providerMessage).slice(0, 240)
         : undefined
     };
   }
-
-  const passwordHash = await bcrypt.hash(tempPassword, 12);
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordHash }
-  });
-  await deleteAllSessionsForUser(user.id);
-  await invalidateUserSecurityArtifacts(user.id);
 
   return generic;
 }
