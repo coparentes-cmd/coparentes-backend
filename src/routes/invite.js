@@ -8,7 +8,11 @@ import { requireParentRole } from '../middleware/rbac.js';
 import { sendInviteEmail } from '../utils/mailer.js';
 import { env } from '../utils/env.js';
 import { v4 as uuidv4 } from 'uuid';
-import { getWorkspaceGraph } from '../services/workspace.js';
+import {
+  getWorkspaceGraph,
+  isParentInviteExpired,
+  refreshParentInviteCode
+} from '../services/workspace.js';
 import { serializeEmailInvite } from '../services/serializers.js';
 
 const router = express.Router();
@@ -29,8 +33,24 @@ router.post('/send', inviteSendLimiter, requireAuth, requireParentRole, async (r
   try {
     const data = sendInviteSchema.parse(req.body);
 
-    if (data.email === req.user.email) {
+    if (data.email === req.user.email.toLowerCase()) {
       return res.status(400).json({ error: 'cannot_invite_self' });
+    }
+
+    if (!req.user.workspaceId) {
+      return res.status(400).json({ error: 'user_missing_workspace' });
+    }
+
+    let workspace = await prisma.workspace.findUnique({
+      where: { id: req.user.workspaceId }
+    });
+
+    if (!workspace) {
+      return res.status(404).json({ error: 'workspace_not_found' });
+    }
+
+    if (isParentInviteExpired(workspace) || !workspace.inviteCode) {
+      workspace = await refreshParentInviteCode(workspace.id);
     }
 
     const token = uuidv4();
@@ -48,12 +68,15 @@ router.post('/send', inviteSendLimiter, requireAuth, requireParentRole, async (r
     const emailResult = await sendInviteEmail({
       to: invite.email,
       acceptUrl,
-      inviterEmail: req.user.email
+      inviterEmail: req.user.email,
+      inviteCode: workspace.inviteCode,
+      workspaceName: workspace.name
     });
 
     return res.status(201).json({
       invite: serializeEmailInvite(invite),
-      emailSent: emailResult.emailSent === true
+      emailSent: emailResult.emailSent === true,
+      inviteCode: workspace.inviteCode
     });
   } catch (error) {
     return next(error);

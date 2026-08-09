@@ -2,19 +2,30 @@ import { Resend } from 'resend';
 import { env } from './env.js';
 
 let resendClient = null;
+let resendClientKey = null;
+
+function resendApiKey() {
+  return process.env.RESEND_API_KEY || env.resendApiKey || '';
+}
+
+function resendFromEmail() {
+  return process.env.RESEND_FROM_EMAIL || env.resendFromEmail || '';
+}
 
 function getResendClient() {
-  if (!env.resendApiKey) {
+  const key = resendApiKey();
+  if (!key) {
     return null;
   }
-  if (!resendClient) {
-    resendClient = new Resend(env.resendApiKey);
+  if (!resendClient || resendClientKey !== key) {
+    resendClient = new Resend(key);
+    resendClientKey = key;
   }
   return resendClient;
 }
 
 export function isEmailDeliveryConfigured() {
-  return Boolean(env.resendApiKey && env.resendFromEmail);
+  return Boolean(resendApiKey() && resendFromEmail());
 }
 
 export function escapeHtml(value) {
@@ -44,7 +55,7 @@ async function dispatchEmail({ to, subject, text, html }) {
   }
 
   const result = await resend.emails.send({
-    from: env.resendFromEmail,
+    from: resendFromEmail(),
     to,
     subject,
     text,
@@ -66,30 +77,58 @@ async function dispatchEmail({ to, subject, text, html }) {
   };
 }
 
-export async function sendInviteEmail({ to, acceptUrl, inviterEmail }) {
+export async function sendInviteEmail({
+  to,
+  acceptUrl,
+  inviterEmail,
+  inviteCode,
+  workspaceName
+}) {
+  const safeCode = inviteCode ? String(inviteCode) : '';
+  const safeWorkspace = workspaceName
+    ? escapeHtml(workspaceName)
+    : 'Coparentes';
+  const codeBlock = safeCode
+    ? `\nKod dołączenia do przestrzeni: ${safeCode}\n` +
+      `W aplikacji wybierz Dołączanie i wpisz ten kod.\n`
+    : '';
+  const codeHtml = safeCode
+    ? `<p style="margin: 20px 0;">
+          <strong>Kod dołączenia:</strong>
+          <span style="display:inline-block;margin-left:8px;padding:8px 12px;background:#F3F4F6;border-radius:8px;font-size:18px;letter-spacing:1px;font-weight:700;">${escapeHtml(safeCode)}</span>
+        </p>
+        <p>W aplikacji Coparentes wybierz zakładkę <strong>Dołączanie</strong> i wpisz ten kod.</p>`
+    : '';
+
   try {
     return await dispatchEmail({
       to,
       subject: 'Zaproszenie do Coparentes',
       text:
         `Zaproszenie do Coparentes\n\n` +
-        `${inviterEmail} zaprosił Cię do połączenia kont w Coparentes.\n` +
-        `Akceptuj zaproszenie: ${acceptUrl}\n\n` +
+        `${inviterEmail} zaprosił Cię do przestrzeni „${workspaceName || 'Coparentes'}”.\n` +
+        codeBlock +
+        `\nMożesz też zaakceptować zaproszenie linkiem (jeśli masz już konto): ${acceptUrl}\n\n` +
         'Jeśli to nie Ty, zignoruj tę wiadomość.',
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111111;">
           <h2 style="color: #00C896;">Zaproszenie do Coparentes</h2>
-          <p>Użytkownik <strong>${escapeHtml(inviterEmail)}</strong> zaprosił Cię do połączenia kont w Coparentes.</p>
-          <p><a href="${escapeHtml(acceptUrl)}" style="color: #0080FF;">Kliknij tutaj, aby zaakceptować zaproszenie</a></p>
+          <p>Użytkownik <strong>${escapeHtml(inviterEmail)}</strong> zaprosił Cię do przestrzeni <strong>${safeWorkspace}</strong>.</p>
+          ${codeHtml}
+          <p><a href="${escapeHtml(acceptUrl)}" style="color: #0080FF;">Lub kliknij tutaj, aby zaakceptować zaproszenie (gdy masz już konto)</a></p>
           <p style="color: #5F6673; font-size: 13px;">Jeśli to nie Ty, zignoruj tę wiadomość.</p>
         </div>
       `
     });
   } catch (error) {
-    if (error.code === 'email_not_configured') {
-      return { skipped: true, emailSent: false };
-    }
-    throw error;
+    // Never fail the invite API solely because mail delivery is down —
+    // the invite row (and join code) still exist for the client fallback.
+    console.error('[mailer] sendInviteEmail soft-failed:', error?.code || error?.message);
+    return {
+      skipped: true,
+      emailSent: false,
+      error: error?.code || 'email_send_failed'
+    };
   }
 }
 
