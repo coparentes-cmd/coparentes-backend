@@ -14,6 +14,8 @@ import {
   serializeCustodyException,
   serializeCustodySchedule
 } from './custodySchedule.js';
+import { getCustodianForDate } from './custody/pattern.js';
+import { utcDayStart } from './custody/dateUtils.js';
 
 const SWAP_MESSAGING_CATEGORY = 'Zmiana grafiku';
 
@@ -123,13 +125,44 @@ async function findCustodySlotForDay(workspaceId, isoDate) {
   });
 }
 
+async function ensureCustodySlotForDay(workspaceId, isoDate, schedule) {
+  const existing = await findCustodySlotForDay(workspaceId, isoDate);
+  if (existing) {
+    return existing;
+  }
+  if (!schedule) {
+    return null;
+  }
+  const day = utcDayStart(isoDate);
+  return prisma.custodySlot.create({
+    data: {
+      workspaceId,
+      date: day,
+      custodian: getCustodianForDate(schedule, day),
+      source: 'schedule',
+      scheduleId: schedule.id,
+      handoverTime: schedule.handoverTime,
+      handoverLocation: schedule.handoverLocation
+    }
+  });
+}
+
 async function applyAcceptedSwapToCalendar({
   workspaceId,
   originalDate,
   proposedDate
 }) {
-  const slotOriginal = await findCustodySlotForDay(workspaceId, originalDate);
-  const slotProposed = await findCustodySlotForDay(workspaceId, proposedDate);
+  const schedule = await getActiveOrPendingSchedule(workspaceId);
+  const slotOriginal = await ensureCustodySlotForDay(
+    workspaceId,
+    originalDate,
+    schedule
+  );
+  const slotProposed = await ensureCustodySlotForDay(
+    workspaceId,
+    proposedDate,
+    schedule
+  );
 
   if (!slotOriginal || !slotProposed) {
     console.warn('swap_accept_missing_slots', {
