@@ -329,16 +329,24 @@ const passwordSchema = z.object({
   newPassword: z.string().min(8)
 });
 
-const forgotPasswordLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, try again later' }
-});
-
 const forgotPasswordSchema = z.object({
   email: z.string().trim().toLowerCase().email()
+});
+
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, try again later' },
+  keyGenerator: (req) => {
+    const email =
+      typeof req.body?.email === 'string'
+        ? req.body.email.trim().toLowerCase()
+        : '';
+    const ip = clientIp(req) || req.ip || 'unknown';
+    return email ? `forgot:${email}` : `forgot-ip:${ip}`;
+  }
 });
 
 router.post(

@@ -44,6 +44,8 @@ function createMailerError(code, message, details) {
   return error;
 }
 
+const EMAIL_SEND_TIMEOUT_MS = 15000;
+
 async function dispatchEmail({ to, subject, text, html }) {
   const resend = getResendClient();
   if (!isEmailDeliveryConfigured() || !resend) {
@@ -54,40 +56,58 @@ async function dispatchEmail({ to, subject, text, html }) {
     );
   }
 
-  const sendPromise = resend.emails.send({
-    from: resendFromEmail(),
-    to,
-    subject,
-    text,
-    html
-  });
+  const recipients = Array.isArray(to) ? to : [to];
+  let timeoutId;
 
-  const timeoutPromise = new Promise((_, reject) => {
-    setTimeout(() => {
-      reject(
-        createMailerError(
-          'email_send_timeout',
-          'Email provider timed out after 8s'
-        )
+  try {
+    const sendPromise = resend.emails.send({
+      from: resendFromEmail(),
+      to: recipients,
+      subject,
+      text,
+      html
+    });
+
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(
+          createMailerError(
+            'email_send_timeout',
+            `Email provider timed out after ${EMAIL_SEND_TIMEOUT_MS / 1000}s`
+          )
+        );
+      }, EMAIL_SEND_TIMEOUT_MS);
+    });
+
+    const result = await Promise.race([sendPromise, timeoutPromise]);
+
+    if (result?.error) {
+      console.error('[mailer] Resend send failed:', result.error);
+      throw createMailerError(
+        'email_send_failed',
+        result.error.message || 'Email send failed',
+        result.error
       );
-    }, 8000);
-  });
+    }
 
-  const result = await Promise.race([sendPromise, timeoutPromise]);
+    const id = result?.data?.id ?? null;
+    if (!id) {
+      console.error('[mailer] Resend returned no message id:', result);
+      throw createMailerError(
+        'email_send_failed',
+        'Email provider returned no message id'
+      );
+    }
 
-  if (result.error) {
-    console.error('[mailer] Resend send failed:', result.error);
-    throw createMailerError(
-      'email_send_failed',
-      result.error.message || 'Email send failed',
-      result.error
-    );
+    return {
+      emailSent: true,
+      id
+    };
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
-
-  return {
-    emailSent: true,
-    id: result.data?.id ?? null
-  };
 }
 
 export async function sendInviteEmail({

@@ -432,7 +432,8 @@ function generateTempPassword() {
 /**
  * Issue a one-time temporary password by e-mail.
  * Always returns a generic success payload (no account enumeration).
- * Rolls back the password hash if the e-mail cannot be delivered.
+ * Sends the e-mail first, then updates the hash — avoids rollback races where
+ * Resend delivers after a timeout and the temp password no longer matches.
  */
 export async function requestPasswordReset(email) {
   const normalized = String(email || '').trim().toLowerCase();
@@ -447,32 +448,36 @@ export async function requestPasswordReset(email) {
     return generic;
   }
 
-  const previousHash = user.passwordHash;
   const tempPassword = generateTempPassword();
-  const passwordHash = await bcrypt.hash(tempPassword, 12);
-
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordHash }
-  });
-  await deleteAllSessionsForUser(user.id);
-  await invalidateUserSecurityArtifacts(user.id);
-
   const emailResult = await sendTempPasswordEmail({
     to: user.email,
     tempPassword
   });
 
   if (emailResult.emailSent !== true) {
-    await prisma.user.update({
-      where: { id: user.id },
-      data: { passwordHash: previousHash }
-    });
+    const code = emailResult.error || 'otp_email_failed';
+    console.error(
+      '[auth] password reset e-mail failed:',
+      code,
+      'userId=',
+      user.id
+    );
     return {
-      error: 'otp_email_failed',
+      error:
+        code === 'email_not_configured' || code === 'email_send_timeout'
+          ? code
+          : 'otp_email_failed',
       status: 503
     };
   }
+
+  const passwordHash = await bcrypt.hash(tempPassword, 12);
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash }
+  });
+  await deleteAllSessionsForUser(user.id);
+  await invalidateUserSecurityArtifacts(user.id);
 
   return generic;
 }

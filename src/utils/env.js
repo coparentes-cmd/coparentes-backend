@@ -83,6 +83,12 @@ export function validateProductionEnv() {
     errors.push('INTEGRITY_SECRET is required in production');
   }
 
+  if (!env.resendApiKey?.trim() || !env.resendFromEmail?.trim()) {
+    errors.push(
+      'RESEND_API_KEY and RESEND_FROM_EMAIL are required in production (password reset + invites)'
+    );
+  }
+
   if (errors.length > 0) {
     throw new Error(`Production environment check failed:\n- ${errors.join('\n- ')}`);
   }
