@@ -54,13 +54,26 @@ async function dispatchEmail({ to, subject, text, html }) {
     );
   }
 
-  const result = await resend.emails.send({
+  const sendPromise = resend.emails.send({
     from: resendFromEmail(),
     to,
     subject,
     text,
     html
   });
+
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => {
+      reject(
+        createMailerError(
+          'email_send_timeout',
+          'Email provider timed out after 8s'
+        )
+      );
+    }, 8000);
+  });
+
+  const result = await Promise.race([sendPromise, timeoutPromise]);
 
   if (result.error) {
     console.error('[mailer] Resend send failed:', result.error);
