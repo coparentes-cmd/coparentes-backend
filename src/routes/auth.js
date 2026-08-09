@@ -358,7 +358,10 @@ router.post(
       const result = await requestPasswordReset(data.email);
 
       if (result.error) {
-        return res.status(result.status).json({ error: result.error });
+        return res.status(result.status).json({
+          error: result.error,
+          ...(result.reason ? { reason: result.reason } : {})
+        });
       }
 
       return res.status(result.status).json({

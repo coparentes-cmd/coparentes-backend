@@ -18,7 +18,7 @@ import {
   rejectInsecureApi
 } from './middleware/security.js';
 import { env } from './utils/env.js';
-import { isEmailDeliveryConfigured } from './utils/mailer.js';
+import { getEmailFromSummary, isEmailDeliveryConfigured } from './utils/mailer.js';
 import { prisma } from './lib/prisma.js';
 
 /**
@@ -73,7 +73,8 @@ export function createApp() {
         status: 'ready',
         database: 'ok',
         environment: env.nodeEnv,
-        emailDelivery: isEmailDeliveryConfigured() ? 'configured' : 'missing'
+        emailDelivery: isEmailDeliveryConfigured() ? 'configured' : 'missing',
+        emailFrom: getEmailFromSummary()
       });
     } catch (error) {
       console.error(error);

@@ -456,9 +456,14 @@ export async function requestPasswordReset(email) {
 
   if (emailResult.emailSent !== true) {
     const code = emailResult.error || 'otp_email_failed';
+    const providerMessage =
+      emailResult.details?.message ||
+      emailResult.message ||
+      null;
     console.error(
       '[auth] password reset e-mail failed:',
       code,
+      providerMessage,
       'userId=',
       user.id
     );
@@ -467,7 +472,11 @@ export async function requestPasswordReset(email) {
         code === 'email_not_configured' || code === 'email_send_timeout'
           ? code
           : 'otp_email_failed',
-      status: 503
+      status: 503,
+      // Safe provider hint for operators (no secrets). Helps diagnose Resend domain/key issues.
+      reason: providerMessage
+        ? String(providerMessage).slice(0, 240)
+        : undefined
     };
   }
 

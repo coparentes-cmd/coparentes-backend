@@ -28,6 +28,22 @@ export function isEmailDeliveryConfigured() {
   return Boolean(resendApiKey() && resendFromEmail());
 }
 
+/** Masked From address for /api/ready (no secrets). */
+export function getEmailFromSummary() {
+  const from = resendFromEmail();
+  if (!from) {
+    return null;
+  }
+  const match = from.match(/@([^>]+)>?/);
+  const domain = match?.[1]?.trim() || null;
+  const key = resendApiKey();
+  return {
+    configured: true,
+    fromDomain: domain,
+    keyPrefix: key ? key.slice(0, 5) : null
+  };
+}
+
 export function escapeHtml(value) {
   return String(value)
     .replace(/&/g, '&amp;')
@@ -217,12 +233,15 @@ export async function sendTempPasswordEmail({ to, tempPassword }) {
   } catch (error) {
     console.error(
       '[mailer] sendTempPasswordEmail failed:',
-      error?.code || error?.message
+      error?.code || error?.message,
+      error?.details || ''
     );
     return {
       skipped: true,
       emailSent: false,
-      error: error?.code || 'email_send_failed'
+      error: error?.code || 'email_send_failed',
+      details: error?.details || null,
+      message: error?.message || null
     };
   }
 }
