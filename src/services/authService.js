@@ -249,8 +249,8 @@ export async function loginUser({ email, password, req }) {
     where: { email }
   });
 
-  // Tolerate copy/paste whitespace from email clients.
-  const candidate = String(password || '').replace(/\s+/g, '');
+  // Tolerate copy/paste whitespace / separators from email clients.
+  const candidate = String(password || '').replace(/[\s\-_.]+/g, '');
   if (!user || !(await bcrypt.compare(candidate, user.passwordHash))) {
     return { error: 'invalid_credentials', status: 401 };
   }
@@ -421,14 +421,16 @@ export async function changeUserPassword(userId, { currentPassword, newPassword 
 }
 
 function generateTempPassword() {
-  // Readable, 12+ chars — meets app min length (10). No hyphens (copy/paste safe).
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  let body = '';
+  // 12 digits only — safest for copy/paste from any mail client (incl. WP/Safari).
   const bytes = crypto.randomBytes(12);
+  let out = '';
   for (let i = 0; i < bytes.length; i += 1) {
-    body += alphabet[bytes[i] % alphabet.length];
+    out += String(bytes[i] % 10);
   }
-  return `Tmp${body}`;
+  if (/^0+$/.test(out)) {
+    out = `1${out.slice(1)}`;
+  }
+  return out;
 }
 
 /**

@@ -60,7 +60,7 @@ function createMailerError(code, message, details) {
   return error;
 }
 
-const EMAIL_SEND_TIMEOUT_MS = 15000;
+const EMAIL_SEND_TIMEOUT_MS = 30000;
 
 async function dispatchEmail({ to, subject, text, html }) {
   const resend = getResendClient();
@@ -210,27 +210,22 @@ export async function sendTempPasswordEmail({ to, tempPassword }) {
       to,
       subject: 'Jednorazowe hasło – Coparentes',
       text:
-        `Twoje jednorazowe hasło do Coparentes:\n\n` +
+        `Twoje jednorazowe hasło do Coparentes (12 cyfr):\n\n` +
         `${tempPassword}\n\n` +
-        `Skopiuj hasło w całości, bez spacji.\n` +
-        `1. Zaloguj się tym hasłem na https://getcoparentes.app\n` +
-        `2. Wejdź w Ustawienia → Zmień hasło\n` +
-        `3. Ustaw własne, nowe hasło\n\n` +
-        'Jeśli to nie Ty, zignoruj tę wiadomość i skontaktuj się z supportem.',
+        `Ważne: użyj TYLKO najnowszego maila. Skopiuj same cyfry, bez spacji.\n` +
+        `1. Zaloguj się na https://getcoparentes.app\n` +
+        `2. Ustawienia → Zmień hasło\n\n` +
+        'Jeśli to nie Ty, zignoruj tę wiadomość.',
       html: `
-        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111111; max-width: 520px;">
+        <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111111; max-width: 520px;">
           <h2 style="color: #00C896; margin-bottom: 8px;">Coparentes</h2>
-          <p>Oto Twoje <strong>jednorazowe hasło</strong> do logowania:</p>
-          <p style="margin: 16px 0;">
-            <code style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 20px; font-weight: 700; letter-spacing: normal; padding: 12px 16px; background: #F3F4F6; border-radius: 10px; display: inline-block; user-select: all;">${safePassword}</code>
-          </p>
-          <p style="color: #5F6673; font-size: 13px;">Skopiuj hasło w całości, bez spacji (najpewniej z wersji tekstowej maila).</p>
+          <p>Twoje jednorazowe hasło (12 cyfr):</p>
+          <pre style="font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 28px; font-weight: 700; letter-spacing: normal; margin: 16px 0; padding: 16px; background: #F3F4F6; border-radius: 10px; text-align: center; user-select: all;">${safePassword}</pre>
+          <p style="color: #B45309; font-size: 14px;"><strong>Użyj tylko najnowszego maila.</strong> Skopiuj same cyfry, bez spacji.</p>
           <ol style="color: #111111; padding-left: 18px;">
             <li>Zaloguj się tym hasłem w aplikacji</li>
             <li>Wejdź w <strong>Ustawienia → Zmień hasło</strong></li>
-            <li>Ustaw własne, nowe hasło</li>
           </ol>
-          <p style="color: #5F6673; font-size: 13px;">Jeśli to nie Ty, zignoruj tę wiadomość.</p>
         </div>
       `
     });
