@@ -13,6 +13,7 @@ export async function proposeCustodySchedule({
   endDate,
   weekA,
   weekB,
+  weekInterval,
   handoverTime,
   handoverLocation
 }) {
@@ -22,7 +23,7 @@ export async function proposeCustodySchedule({
     throw error;
   }
 
-  const resolved = resolveWeekPattern(patternType, weekA, weekB);
+  const resolved = resolveWeekPattern(patternType, weekA, weekB, weekInterval);
   const normalizedStart = utcDayStart(startDate);
   const normalizedEnd = endDate ? utcDayStart(endDate) : null;
 

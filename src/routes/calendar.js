@@ -20,15 +20,18 @@ import { optionalEntityIdSchema, parseEntityId } from '../utils/ids.js';
 
 const router = express.Router();
 
-const weekPatternSchema = z.object({
-  monday: z.enum(['parentA', 'parentB']),
-  tuesday: z.enum(['parentA', 'parentB']),
-  wednesday: z.enum(['parentA', 'parentB']),
-  thursday: z.enum(['parentA', 'parentB']),
-  friday: z.enum(['parentA', 'parentB']),
-  saturday: z.enum(['parentA', 'parentB']),
-  sunday: z.enum(['parentA', 'parentB'])
-});
+const weekPatternSchema = z
+  .object({
+    monday: z.enum(['parentA', 'parentB']),
+    tuesday: z.enum(['parentA', 'parentB']),
+    wednesday: z.enum(['parentA', 'parentB']),
+    thursday: z.enum(['parentA', 'parentB']),
+    friday: z.enum(['parentA', 'parentB']),
+    saturday: z.enum(['parentA', 'parentB']),
+    sunday: z.enum(['parentA', 'parentB']),
+    _weekInterval: z.number().int().min(1).max(52).optional()
+  })
+  .passthrough();
 
 router.use(requireAuth);
 
@@ -49,6 +52,7 @@ router.post('/schedules', requireParentRole, async (req, res, next) => {
       endDate: z.string().nullable().optional(),
       weekA: weekPatternSchema.optional(),
       weekB: weekPatternSchema.optional(),
+      weekInterval: z.number().int().min(1).max(52).optional(),
       handoverTime: z.string().max(20).nullable().optional(),
       handoverLocation: z.string().max(500).nullable().optional()
     });

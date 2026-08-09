@@ -1,11 +1,21 @@
 export function serializeCustodySchedule(schedule) {
+  const weekA = JSON.parse(schedule.weekAJson);
+  const weekB = JSON.parse(schedule.weekBJson);
+  const weekInterval =
+    Number.isFinite(Number(weekA._weekInterval)) && Number(weekA._weekInterval) > 0
+      ? Number(weekA._weekInterval)
+      : null;
+  const cleanWeekA = { ...weekA };
+  delete cleanWeekA._weekInterval;
+
   return {
     id: schedule.id,
     patternType: schedule.patternType,
     startDate: schedule.startDate.toISOString(),
     endDate: schedule.endDate ? schedule.endDate.toISOString() : null,
-    weekA: JSON.parse(schedule.weekAJson),
-    weekB: JSON.parse(schedule.weekBJson),
+    weekA: cleanWeekA,
+    weekB,
+    weekInterval,
     handoverTime: schedule.handoverTime,
     handoverLocation: schedule.handoverLocation,
     status: schedule.status,

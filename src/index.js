@@ -1,7 +1,7 @@
 import { createApp } from './createApp.js';
 import { getCorsConfigSummary } from './middleware/cors.js';
 import { env, validateProductionEnv } from './utils/env.js';
-import { isEmailDeliveryConfigured } from './utils/mailer.js';
+import { getEmailFromSummary, isEmailDeliveryConfigured } from './utils/mailer.js';
 import { seedDemoData } from './lib/seed.js';
 import { purgeExpiredSessions } from './services/session.js';
 import { purgeExpiredExportJobs } from './services/exports.js';
@@ -48,6 +48,27 @@ async function start() {
     console.log(
       `Email delivery: ${isEmailDeliveryConfigured() ? 'configured' : 'NOT configured (Resend)'}`
     );
+    const fromSummary = getEmailFromSummary();
+    if (fromSummary?.fromDomain) {
+      console.log(`Email From domain: ${fromSummary.fromDomain}`);
+      const blocked = new Set([
+        'gmail.com',
+        'googlemail.com',
+        'wp.pl',
+        'onet.pl',
+        'o2.pl',
+        'interia.pl',
+        'outlook.com',
+        'hotmail.com',
+        'yahoo.com'
+      ]);
+      if (blocked.has(fromSummary.fromDomain.toLowerCase())) {
+        console.error(
+          `[mailer] RESEND_FROM_EMAIL uses unverifiable domain @${fromSummary.fromDomain}. ` +
+            'Resend requires a verified domain (e.g. noreply@getcoparentes.app) or onboarding@resend.dev for tests.'
+        );
+      }
+    }
     console.log(
       `CORS: ${cors.exactOrigins.length} exact origin(s), ${cors.originPatterns.length} pattern(s), localDev=${cors.allowLocalDevOrigins}`
     );
