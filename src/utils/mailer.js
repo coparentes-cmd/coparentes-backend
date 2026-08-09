@@ -166,3 +166,43 @@ export async function sendOtpEmail({ to, code }) {
     `
   });
 }
+
+export async function sendTempPasswordEmail({ to, tempPassword }) {
+  const safePassword = escapeHtml(tempPassword);
+  try {
+    return await dispatchEmail({
+      to,
+      subject: 'Jednorazowe hasło – Coparentes',
+      text:
+        `Twoje jednorazowe hasło do Coparentes:\n\n` +
+        `${tempPassword}\n\n` +
+        `1. Zaloguj się tym hasłem na https://getcoparentes.app\n` +
+        `2. Wejdź w Ustawienia → Zmień hasło\n` +
+        `3. Ustaw własne, nowe hasło\n\n` +
+        'Jeśli to nie Ty, zignoruj tę wiadomość i skontaktuj się z supportem.',
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111111; max-width: 520px;">
+          <h2 style="color: #00C896; margin-bottom: 8px;">Coparentes</h2>
+          <p>Oto Twoje <strong>jednorazowe hasło</strong> do logowania:</p>
+          <p style="font-size: 22px; font-weight: 700; letter-spacing: 1px; margin: 16px 0; padding: 12px 16px; background: #F3F4F6; border-radius: 10px; display: inline-block;">${safePassword}</p>
+          <ol style="color: #111111; padding-left: 18px;">
+            <li>Zaloguj się tym hasłem w aplikacji</li>
+            <li>Wejdź w <strong>Ustawienia → Zmień hasło</strong></li>
+            <li>Ustaw własne, nowe hasło</li>
+          </ol>
+          <p style="color: #5F6673; font-size: 13px;">Jeśli to nie Ty, zignoruj tę wiadomość.</p>
+        </div>
+      `
+    });
+  } catch (error) {
+    console.error(
+      '[mailer] sendTempPasswordEmail failed:',
+      error?.code || error?.message
+    );
+    return {
+      skipped: true,
+      emailSent: false,
+      error: error?.code || 'email_send_failed'
+    };
+  }
+}

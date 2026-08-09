@@ -20,6 +20,7 @@ import {
   loginUser,
   logoutUser,
   registerUser,
+  requestPasswordReset,
   resendLoginOtp,
   updateUserProfile,
   verifyLoginOtp
@@ -327,6 +328,43 @@ const passwordSchema = z.object({
   currentPassword: z.string().min(8),
   newPassword: z.string().min(8)
 });
+
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, try again later' }
+});
+
+const forgotPasswordSchema = z.object({
+  email: z.string().trim().toLowerCase().email()
+});
+
+router.post(
+  '/forgot-password',
+  forgotPasswordLimiter,
+  async (req, res, next) => {
+    try {
+      const data = forgotPasswordSchema.parse(req.body);
+      const result = await requestPasswordReset(data.email);
+
+      if (result.error) {
+        return res.status(result.status).json({ error: result.error });
+      }
+
+      return res.status(result.status).json({
+        success: true,
+        message: result.message
+      });
+    } catch (error) {
+      if (error?.name === 'ZodError') {
+        return res.status(400).json({ error: 'invalid_request' });
+      }
+      return next(error);
+    }
+  }
+);
 
 router.post('/password', requireAuth, authActionLimiter, async (req, res, next) => {
   try {

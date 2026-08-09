@@ -25,6 +25,8 @@ import {
   saveRegistrationConsents,
   validateRequiredConsents
 } from './consent.service.js';
+import { sendTempPasswordEmail } from '../utils/mailer.js';
+import crypto from 'node:crypto';
 
 function parseDateOfBirth(value) {
   const date = new Date(value);
@@ -414,4 +416,63 @@ export async function changeUserPassword(userId, { currentPassword, newPassword 
   await invalidateUserSecurityArtifacts(user.id);
 
   return { success: true, status: 200 };
+}
+
+function generateTempPassword() {
+  // Readable, 12+ chars — meets app min length (10).
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  let body = '';
+  const bytes = crypto.randomBytes(10);
+  for (let i = 0; i < bytes.length; i += 1) {
+    body += alphabet[bytes[i] % alphabet.length];
+  }
+  return `Tmp-${body}`;
+}
+
+/**
+ * Issue a one-time temporary password by e-mail.
+ * Always returns a generic success payload (no account enumeration).
+ * Rolls back the password hash if the e-mail cannot be delivered.
+ */
+export async function requestPasswordReset(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  const generic = {
+    success: true,
+    status: 200,
+    message: 'If an account exists, a temporary password was sent.'
+  };
+
+  const user = await prisma.user.findUnique({ where: { email: normalized } });
+  if (!user) {
+    return generic;
+  }
+
+  const previousHash = user.passwordHash;
+  const tempPassword = generateTempPassword();
+  const passwordHash = await bcrypt.hash(tempPassword, 12);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { passwordHash }
+  });
+  await deleteAllSessionsForUser(user.id);
+  await invalidateUserSecurityArtifacts(user.id);
+
+  const emailResult = await sendTempPasswordEmail({
+    to: user.email,
+    tempPassword
+  });
+
+  if (emailResult.emailSent !== true) {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: previousHash }
+    });
+    return {
+      error: 'otp_email_failed',
+      status: 503
+    };
+  }
+
+  return generic;
 }
