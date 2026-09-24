@@ -43,6 +43,35 @@ function assertMessageThread(body) {
   assert.ok(Array.isArray(body.messages));
 }
 
+/** Dummy client E2E envelope (backend does not validate crypto). */
+function e2eBody(plainLabel, tone = 'neutral') {
+  return {
+    ciphertext: Buffer.from(plainLabel, 'utf8').toString('base64'),
+    nonce: Buffer.from(`nonce-${plainLabel}`).toString('base64'),
+    tone
+  };
+}
+
+function parentThreadKeys(userIdA, userIdB) {
+  const keys = [{ userId: userIdA, encryptedKey: `sealed-for-${userIdA}` }];
+  if (userIdB) {
+    keys.push({ userId: userIdB, encryptedKey: `sealed-for-${userIdB}` });
+  }
+  return keys;
+}
+
+function assertE2eMessage(message, plainLabel) {
+  assert.equal(
+    message.ciphertext,
+    Buffer.from(plainLabel, 'utf8').toString('base64')
+  );
+  assert.equal(
+    message.nonce,
+    Buffer.from(`nonce-${plainLabel}`).toString('base64')
+  );
+  assert.equal(message.content, undefined);
+}
+
 function assertExportJob(body) {
   assert.ok(body.id);
   assert.ok(body.type);
@@ -120,6 +149,7 @@ describe('E2E flow (register → join → thread → message → export → down
     assert.ok(childInviteCode, 'workspace.childInviteCode required');
     testWorkspaceId = register.json.workspace.id;
     const tokenA = register.json.token;
+    const userIdA = register.json.user.id;
 
     // 1b. Add child (parentA onboarding) — Flutter: POST /workspace/children
     const addChild = await request(server, 'POST', '/api/workspace/children', {
@@ -175,6 +205,7 @@ describe('E2E flow (register → join → thread → message → export → down
       'workspace should list both parents'
     );
     const tokenB = join.json.token;
+    const userIdB = join.json.user.id;
 
     const parentBCannotAddChild = await request(server, 'POST', '/api/workspace/children', {
       token: tokenB,
@@ -192,7 +223,8 @@ describe('E2E flow (register → join → thread → message → export → down
       body: {
         subject: 'E2E test wątek',
         category: 'Ogólne',
-        childId: null
+        childId: null,
+        threadKeys: parentThreadKeys(userIdA, userIdB)
       }
     });
     assert.equal(
@@ -204,13 +236,23 @@ describe('E2E flow (register → join → thread → message → export → down
     assert.equal(createThread.json.messages.length, 0);
     const threadId = createThread.json.id;
 
-    // 4. Send message (parentB) — Flutter: sendMessage
+    const myKeyA = await request(server, 'GET', `/api/threads/${threadId}/keys/mine`, {
+      token: tokenA
+    });
+    assert.equal(myKeyA.status, 200);
+    assert.equal(myKeyA.json.encryptedKey, `sealed-for-${userIdA}`);
+
+    const myKeyB = await request(server, 'GET', `/api/threads/${threadId}/keys/mine`, {
+      token: tokenB
+    });
+    assert.equal(myKeyB.status, 200);
+    assert.equal(myKeyB.json.encryptedKey, `sealed-for-${userIdB}`);
+
+    // 4. Send message (parentB) — Flutter: sendMessage (E2E ciphertext)
+    const labelB = 'Wiadomość E2E od parentB';
     const sendMessage = await request(server, 'POST', `/api/threads/${threadId}/messages`, {
       token: tokenB,
-      body: {
-        content: 'Wiadomość E2E od parentB',
-        tone: 'neutral'
-      }
+      body: e2eBody(labelB)
     });
     assert.equal(
       sendMessage.status,
@@ -220,21 +262,19 @@ describe('E2E flow (register → join → thread → message → export → down
     assertMessageThread(sendMessage.json);
     assert.ok(sendMessage.json.messages.length >= 1);
     const lastMessage = sendMessage.json.messages.at(-1);
-    assert.equal(lastMessage.content, 'Wiadomość E2E od parentB');
+    assertE2eMessage(lastMessage, labelB);
     assert.equal(lastMessage.tone, 'neutral');
     assert.equal(lastMessage.isRead, false, 'just-sent message must not be read yet');
     assert.ok(lastMessage.hash);
 
     // 4b. Parent A sends — Parent B must see the message
+    const labelA = 'Wiadomość E2E od parentA';
     const sendFromA = await request(server, 'POST', `/api/threads/${threadId}/messages`, {
       token: tokenA,
-      body: {
-        content: 'Wiadomość E2E od parentA',
-        tone: 'neutral'
-      }
+      body: e2eBody(labelA)
     });
     assert.equal(sendFromA.status, 201);
-    assert.equal(sendFromA.json.messages.at(-1).content, 'Wiadomość E2E od parentA');
+    assertE2eMessage(sendFromA.json.messages.at(-1), labelA);
     assert.equal(
       sendFromA.json.messages.at(-1).isRead,
       false,
@@ -246,7 +286,7 @@ describe('E2E flow (register → join → thread → message → export → down
     });
     assert.equal(markBySender.status, 200);
     const ownAfterSelfRead = markBySender.json.messages.find(
-      (m) => m.content === 'Wiadomość E2E od parentA'
+      (m) => m.ciphertext === Buffer.from(labelA, 'utf8').toString('base64')
     );
     assert.ok(ownAfterSelfRead);
     assert.equal(
@@ -262,7 +302,9 @@ describe('E2E flow (register → join → thread → message → export → down
     const threadForB = listAsB.json.threads.find((t) => t.id === threadId);
     assert.ok(threadForB, 'parentB should see thread created by parentA');
     assert.ok(
-      threadForB.messages.some((m) => m.content === 'Wiadomość E2E od parentA'),
+      threadForB.messages.some(
+        (m) => m.ciphertext === Buffer.from(labelA, 'utf8').toString('base64')
+      ),
       'parentB should see message sent by parentA'
     );
     assert.equal(
@@ -295,7 +337,10 @@ describe('E2E flow (register → join → thread → message → export → down
 
     const schoolChannel = await request(server, 'POST', '/api/threads/channel', {
       token: tokenA,
-      body: { category: 'Szkoła' }
+      body: {
+        category: 'Szkoła',
+        threadKeys: parentThreadKeys(userIdA, userIdB)
+      }
     });
     assert.equal(schoolChannel.status, 200);
     assert.equal(schoolChannel.json.subject, 'Szkoła');
@@ -303,14 +348,20 @@ describe('E2E flow (register → join → thread → message → export → down
 
     const schoolAgain = await request(server, 'POST', '/api/threads/channel', {
       token: tokenB,
-      body: { category: 'Szkoła' }
+      body: {
+        category: 'Szkoła',
+        threadKeys: parentThreadKeys(userIdA, userIdB)
+      }
     });
     assert.equal(schoolAgain.status, 200);
     assert.equal(schoolAgain.json.id, schoolChannel.json.id);
 
     const allChannel = await request(server, 'POST', '/api/threads/channel', {
       token: tokenA,
-      body: { category: 'Wszystkie' }
+      body: {
+        category: 'Wszystkie',
+        threadKeys: parentThreadKeys(userIdA, userIdB)
+      }
     });
     assert.equal(allChannel.status, 200);
     assert.equal(allChannel.json.subject, 'Wszystkie');
@@ -322,7 +373,7 @@ describe('E2E flow (register → join → thread → message → export → down
       `/api/threads/${allChannel.json.id}/messages`,
       {
         token: tokenA,
-        body: { content: 'Wiadomość w kanale Wszystkie', tone: 'neutral' }
+        body: e2eBody('Wiadomość w kanale Wszystkie')
       }
     );
     assert.equal(
@@ -330,7 +381,7 @@ describe('E2E flow (register → join → thread → message → export → down
       201,
       `sendToAll failed: ${JSON.stringify(sendToAll.json)}`
     );
-    assert.equal(sendToAll.json.messages.at(-1).content, 'Wiadomość w kanale Wszystkie');
+    assertE2eMessage(sendToAll.json.messages.at(-1), 'Wiadomość w kanale Wszystkie');
 
     // 5. List threads (parentA) — Flutter: getThreads
     const listThreads = await request(server, 'GET', '/api/threads', {
@@ -345,10 +396,28 @@ describe('E2E flow (register → join → thread → message → export → down
 
     const financeChannel = await request(server, 'POST', '/api/threads/channel', {
       token: tokenA,
-      body: { category: 'Finanse' }
+      body: {
+        category: 'Finanse',
+        threadKeys: parentThreadKeys(userIdA, userIdB)
+      }
     });
     assert.equal(financeChannel.status, 200);
     assert.equal(financeChannel.json.audience, 'parents');
+
+    const familyChannel = await request(server, 'POST', '/api/threads/channel', {
+      token: tokenA,
+      body: {
+        category: 'Rodzina',
+        threadKeys: parentThreadKeys(userIdA, userIdB)
+      }
+    });
+    assert.equal(
+      familyChannel.status,
+      200,
+      `familyChannel failed: ${JSON.stringify(familyChannel.json)}`
+    );
+    assert.equal(familyChannel.json.audience, 'family');
+    assert.equal(familyChannel.json.category, 'Rodzina');
 
     const joinPreview = await request(
       server,
@@ -369,6 +438,7 @@ describe('E2E flow (register → join → thread → message → export → down
     assert.equal(joinChild.status, 201, `joinChild failed: ${JSON.stringify(joinChild.json)}`);
     assertAuthSession(joinChild.json, 'child');
     const tokenChild = joinChild.json.token;
+    const userIdChild = joinChild.json.user.id;
 
     const loginChild = await request(server, 'POST', '/api/auth/child/access', {
       body: {
@@ -409,17 +479,44 @@ describe('E2E flow (register → join → thread → message → export → down
     const familyThread = listAsChild.json.threads.find((t) => t.category === 'Rodzina');
     assert.ok(familyThread, 'family thread required');
 
+    const familySync = await request(
+      server,
+      'POST',
+      `/api/threads/${familyThread.id}/keys/family-sync`,
+      {
+        token: tokenA,
+        body: {
+          userId: userIdChild,
+          encryptedKey: `sealed-for-${userIdChild}`
+        }
+      }
+    );
+    assert.equal(
+      familySync.status,
+      201,
+      `family-sync failed: ${JSON.stringify(familySync.json)}`
+    );
+
+    const childKey = await request(
+      server,
+      'GET',
+      `/api/threads/${familyThread.id}/keys/mine`,
+      { token: tokenChild }
+    );
+    assert.equal(childKey.status, 200);
+    assert.equal(childKey.json.encryptedKey, `sealed-for-${userIdChild}`);
+
     const childMessage = await request(
       server,
       'POST',
       `/api/threads/${familyThread.id}/messages`,
       {
         token: tokenChild,
-        body: { content: 'Cześć rodzice!', tone: 'neutral' }
+        body: e2eBody('Cześć rodzice!')
       }
     );
     assert.equal(childMessage.status, 201);
-    assert.equal(childMessage.json.messages.at(-1).content, 'Cześć rodzice!');
+    assertE2eMessage(childMessage.json.messages.at(-1), 'Cześć rodzice!');
 
     const calendarAsChild = await request(server, 'GET', '/api/calendar', {
       token: tokenChild

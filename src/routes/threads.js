@@ -6,11 +6,13 @@ import {
   addMessageToThread,
   createThread,
   getMessageAttachmentDownload,
+  getMyThreadKey,
   getOrCreateCategoryThread,
   getOrCreateFamilyThread,
   getThreadById,
   listThreads,
-  markThreadAsRead
+  markThreadAsRead,
+  syncFamilyThreadKey
 } from '../services/threads.js';
 import {
   listMessageTagsForUser,
@@ -21,6 +23,11 @@ import { entityIdSchema, optionalEntityIdSchema, parseEntityId } from '../utils/
 const router = express.Router();
 
 router.use(requireAuth);
+
+const threadKeyEntrySchema = z.object({
+  userId: z.string().min(1),
+  encryptedKey: z.string().min(1).max(500)
+});
 
 router.get('/', async (req, res, next) => {
   try {
@@ -67,7 +74,8 @@ router.post('/', requireParentRole, async (req, res, next) => {
     const schema = z.object({
       subject: z.string().min(3),
       category: z.string().min(2),
-      childId: optionalEntityIdSchema
+      childId: optionalEntityIdSchema,
+      threadKeys: z.array(threadKeyEntrySchema).min(1)
     });
     const data = schema.parse(req.body);
 
@@ -76,13 +84,20 @@ router.post('/', requireParentRole, async (req, res, next) => {
       createdBy: req.user,
       subject: data.subject,
       category: data.category,
-      childId: data.childId
+      childId: data.childId,
+      threadKeys: data.threadKeys
     });
 
     return res.status(201).json(thread);
   } catch (error) {
     if (error?.code === 'child_not_found') {
       return res.status(400).json({ error: 'child_not_found' });
+    }
+    if (error?.code === 'invalid_thread_keys') {
+      return res.status(400).json({ error: 'invalid_thread_keys' });
+    }
+    if (error?.code === 'thread_keys_required') {
+      return res.status(400).json({ error: 'thread_keys_required' });
     }
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
@@ -93,34 +108,56 @@ router.post('/', requireParentRole, async (req, res, next) => {
 
 router.post('/channel', requireParentRole, async (req, res, next) => {
   try {
-    const schema = z.object({
-      category: z.enum([
-        'Wszystkie',
-        'Szkoła',
-        'Zdrowie',
-        'Finanse',
-        'Zmiana grafiku',
-        'Rodzina'
-      ])
-    });
+    const schema = z
+      .object({
+        category: z.enum([
+          'Wszystkie',
+          'Szkoła',
+          'Zdrowie',
+          'Finanse',
+          'Zmiana grafiku',
+          'Rodzina'
+        ]),
+        threadKeys: z.array(threadKeyEntrySchema).min(1).optional()
+      })
+      .superRefine((data, ctx) => {
+        if (data.category === 'Zmiana grafiku') {
+          return;
+        }
+        if (!data.threadKeys?.length) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: 'thread_keys_required',
+            path: ['threadKeys']
+          });
+        }
+      });
     const data = schema.parse(req.body);
 
     const thread =
       data.category === 'Rodzina'
         ? await getOrCreateFamilyThread({
             workspaceId: req.user.workspaceId,
-            createdById: req.user.id
+            createdById: req.user.id,
+            threadKeys: data.threadKeys
           })
         : await getOrCreateCategoryThread({
             workspaceId: req.user.workspaceId,
             createdBy: req.user,
-            category: data.category
+            category: data.category,
+            threadKeys: data.threadKeys ?? null
           });
 
     return res.json(thread);
   } catch (error) {
     if (error?.code === 'invalid_category') {
       return res.status(400).json({ error: 'invalid_category' });
+    }
+    if (error?.code === 'invalid_thread_keys') {
+      return res.status(400).json({ error: 'invalid_thread_keys' });
+    }
+    if (error?.code === 'thread_keys_required') {
+      return res.status(400).json({ error: 'thread_keys_required' });
     }
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
@@ -169,22 +206,20 @@ router.get(
 router.post('/:threadId/messages', requireParentOrChildMessage, async (req, res, next) => {
   try {
     const schema = z.object({
-      content: z.string().max(4000),
+      ciphertext: z.string().min(1).max(8000),
+      nonce: z.string().min(1),
       tone: z.enum(['neutral', 'tense', 'aggressive', 'positive']).optional(),
       attachments: z.array(attachmentSchema).max(3).optional()
     });
     const data = schema.parse(req.body);
     const threadId = parseEntityId(req.params.threadId, 'threadId');
 
-    if (!data.content.trim() && (data.attachments?.length ?? 0) === 0) {
-      return res.status(400).json({ error: 'message_empty' });
-    }
-
     const thread = await addMessageToThread({
       workspaceId: req.user.workspaceId,
       threadId,
       sender: req.user,
-      content: data.content,
+      ciphertext: data.ciphertext,
+      nonce: data.nonce,
       tone: data.tone ?? 'neutral',
       attachments: data.attachments ?? []
     });
@@ -210,6 +245,61 @@ router.post('/:threadId/messages', requireParentOrChildMessage, async (req, res,
     return next(error);
   }
 });
+
+router.get('/:threadId/keys/mine', async (req, res, next) => {
+  try {
+    const threadId = parseEntityId(req.params.threadId, 'threadId');
+    const result = await getMyThreadKey({
+      workspaceId: req.user.workspaceId,
+      threadId,
+      user: req.user
+    });
+
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    return res.json({ encryptedKey: result.encryptedKey });
+  } catch (error) {
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
+router.post(
+  '/:threadId/keys/family-sync',
+  requireParentRole,
+  async (req, res, next) => {
+    try {
+      const schema = z.object({
+        userId: z.string().min(1),
+        encryptedKey: z.string().min(1).max(500)
+      });
+      const data = schema.parse(req.body);
+      const threadId = parseEntityId(req.params.threadId, 'threadId');
+
+      const result = await syncFamilyThreadKey({
+        workspaceId: req.user.workspaceId,
+        threadId,
+        userId: data.userId,
+        encryptedKey: data.encryptedKey
+      });
+
+      if (result.error) {
+        return res.status(result.status).json({ error: result.error });
+      }
+
+      return res.status(201).json(result.threadKey);
+    } catch (error) {
+      if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
+        return res.status(400).json({ error: 'invalid_request' });
+      }
+      return next(error);
+    }
+  }
+);
 
 router.get('/:threadId', async (req, res, next) => {
   try {

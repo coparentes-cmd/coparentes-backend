@@ -19,4 +19,4 @@ if (!process.env.DATABASE_URL?.trim()) {
 const { seedDemoData } = await import('../src/lib/seed.js');
 
 await seedDemoData({ force: true });
-console.log('Gotowe. Demo: anna@coparentes.app / Coparentes!123 (kod: KOWALSCY2026)');
+console.log('Gotowe. Demo: anna@coparentes.app — password set (kod: KOWALSCY2026)');

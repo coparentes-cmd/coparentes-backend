@@ -63,6 +63,11 @@ function createMailerError(code, message, details) {
 const EMAIL_SEND_TIMEOUT_MS = 30000;
 
 async function dispatchEmail({ to, subject, text, html }) {
+  // Integration tests: skip real Resend; never log subject/html/text.
+  if (process.env.MAILER_STUB_SUCCESS === 'true') {
+    return { emailSent: true, id: 'mailer-stub-id' };
+  }
+
   const resend = getResendClient();
   if (!isEmailDeliveryConfigured() || !resend) {
     console.warn('[mailer] Resend is not configured — email was not sent.');

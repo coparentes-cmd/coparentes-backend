@@ -1,5 +1,7 @@
 node_modules/
 .env
+.env.railway.backup.*
 .pgdata/
 .pgdata-*/
 .pg-embedded.json
+backups/

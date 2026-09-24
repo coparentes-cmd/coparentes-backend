@@ -42,17 +42,19 @@ export function serializeMessage(message) {
     '[]'
   );
   const attachments = parseStoredAttachments(attachmentsJson);
+  const messageType = message.messageType === 'system' ? 'system' : 'user';
+  const atRestPayload = decryptOptionalSafe(
+    message.content,
+    CRYPTO_KEYS.KEY_MESSAGES,
+    messageType === 'system' ? '[wiadomość niedostępna]' : ''
+  );
 
-  return {
+  const base = {
     id: message.id,
     threadId: message.threadId,
     senderId: message.senderId,
     senderName: message.senderName,
-    content: decryptOptionalSafe(
-      message.content,
-      CRYPTO_KEYS.KEY_MESSAGES,
-      '[wiadomość niedostępna]'
-    ),
+    messageType,
     tone: message.tone,
     attachments: serializeAttachmentsForClient(attachments),
     sentAt: message.sentAt.toISOString(),
@@ -61,6 +63,22 @@ export function serializeMessage(message) {
     hash: message.hash,
     isShielded: message.tone === 'aggressive'
   };
+
+  if (messageType === 'system') {
+    return { ...base, content: atRestPayload };
+  }
+
+  let ciphertext = '';
+  let nonce = '';
+  try {
+    const parsed = JSON.parse(atRestPayload);
+    ciphertext = typeof parsed?.ciphertext === 'string' ? parsed.ciphertext : '';
+    nonce = typeof parsed?.nonce === 'string' ? parsed.nonce : '';
+  } catch (_) {
+    // Malformed at-rest E2E envelope — client will treat as undecryptable.
+  }
+
+  return { ...base, ciphertext, nonce };
 }
 
 export function serializeThread(thread, messages, viewerUserId = null) {
@@ -77,6 +95,7 @@ export function serializeThread(thread, messages, viewerUserId = null) {
     category: thread.category,
     childId: thread.childId,
     audience: thread.audience ?? 'parents',
+    isSystemChannel: Boolean(thread.isSystemChannel),
     lastActivity: thread.lastActivity.toISOString(),
     hasUnread,
     messages: messages.map(serializeMessage)

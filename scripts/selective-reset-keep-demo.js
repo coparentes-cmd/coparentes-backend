@@ -152,7 +152,9 @@ try {
     console.log(`  ${row.email} (${row.role}) — ${row.workspace ?? 'brak rodziny'}`);
   }
 
-  console.log('\nGotowe. Zaloguj się: anna@coparentes.app / Coparentes!123');
+  console.log(
+    '\nGotowe. Konta demo (w tym anna@coparentes.app) zachowane, pozostałe usunięte.'
+  );
 } catch (error) {
   console.error('Błąd:', error.message);
   process.exit(1);

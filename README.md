@@ -53,6 +53,10 @@ Auth: header `Authorization: Bearer <session token>` (tabela `Session`, nie JWT)
 - **2FA (FIX-043 roadmap):** UI toggle is disabled until TOTP verification is implemented; do not enable `twoFactorEnabled` in production flows yet.
 - CORS allows requests with no `Origin` header (mobile/curl); browser origins are still validated.
 
+## Known limitations
+
+- Rate limiting (login, register, OTP) jest oparty o in-memory store i działa poprawnie tylko przy jednej instancji backendu. Wymaga migracji na Redis przed skalowaniem poziomym.
+
 ## Setup
 
 ```bash

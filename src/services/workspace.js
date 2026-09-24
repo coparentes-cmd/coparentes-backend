@@ -49,6 +49,19 @@ export async function workspaceHasParentB(workspaceId, client = prisma) {
   return parentB != null;
 }
 
+/** Current parentA/parentB user ids in a workspace (0–2). */
+export async function listParentUserIds(workspaceId, client = prisma) {
+  const parents = await client.user.findMany({
+    where: {
+      workspaceId,
+      role: { in: ['parentA', 'parentB'] }
+    },
+    select: { id: true },
+    orderBy: { createdAt: 'asc' }
+  });
+  return parents.map((row) => row.id);
+}
+
 export async function createWorkspace({ name, client = prisma }) {
   let inviteCode = createInviteCode();
   let childInviteCode = createInviteCode();

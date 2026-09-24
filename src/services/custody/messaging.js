@@ -1,5 +1,5 @@
 import {
-  addMessageToThread,
+  addSystemMessageToThread,
   getOrCreateCategoryThread
 } from '../threads.js';
 import { SCHEDULE_MESSAGING_CATEGORY } from './constants.js';
@@ -12,7 +12,7 @@ export async function notifyScheduleThread({ workspaceId, sender, content }) {
       category: SCHEDULE_MESSAGING_CATEGORY
     });
 
-    await addMessageToThread({
+    await addSystemMessageToThread({
       workspaceId,
       threadId: thread.id,
       sender,

@@ -8,8 +8,8 @@ describe('getOrCreateCategoryThread', () => {
     assert.equal(typeof getOrCreateCategoryThread, 'function');
     assert.match(
       getOrCreateCategoryThread.toString(),
-      /prisma\.thread\.create/,
-      'should create channel threads directly via prisma'
+      /\.thread\.create/,
+      'should create channel threads directly via prisma/tx'
     );
     assert.doesNotMatch(
       getOrCreateCategoryThread.toString(),

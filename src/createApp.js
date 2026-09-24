@@ -10,6 +10,7 @@ import calendarRoutes from './routes/calendar.js';
 import financeRoutes from './routes/finances.js';
 import documentRoutes from './routes/documents.js';
 import workspaceRoutes from './routes/workspace.js';
+import userRoutes from './routes/user.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import mongoSanitize from 'express-mongo-sanitize';
 import {
@@ -85,6 +86,9 @@ export function createApp() {
   // Flutter: AuthRepository (limiter tylko na register/join/login w routes/auth.js)
   app.use('/api/auth', authRoutes);
   app.use('/api/consents', consentRoutes);
+
+  // E2E: public key + opaque private-key envelope
+  app.use('/api/user', userRoutes);
 
   // Flutter: optional email invites
   app.use('/api/invite', inviteRoutes);

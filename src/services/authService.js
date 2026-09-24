@@ -264,29 +264,34 @@ export async function loginUser({ email, password, req }) {
     requiresEmailOtp(user) &&
     !(await isTrustedDeviceValid(user.id, trustedToken))
   ) {
-    try {
-      const { challenge, expiresAt, resendAvailableAt } =
-        await createLoginOtpChallenge(user);
-      return {
-        requiresOtp: true,
-        challengeId: challenge.id,
-        email: maskEmail(user.email),
-        expiresAt: expiresAt.toISOString(),
-        resendAvailableAt: resendAvailableAt.toISOString(),
-        status: 200
-      };
-    } catch (error) {
-      if (
-        error?.code === 'email_not_configured' ||
-        error?.code === 'email_send_failed'
-      ) {
-        return { error: 'otp_email_failed', status: 503 };
-      }
-      throw error;
-    }
+    // Challenge is created by the /login route after OTP-issue rate limit.
+    return { requiresOtp: true, user, status: 200 };
   }
 
   return { user, status: 200 };
+}
+
+/** Create + email a login OTP after the route has passed the issue rate limit. */
+export async function issueLoginOtp(user) {
+  try {
+    const { challenge, expiresAt, resendAvailableAt } =
+      await createLoginOtpChallenge(user);
+    return {
+      challengeId: challenge.id,
+      email: maskEmail(user.email),
+      expiresAt: expiresAt.toISOString(),
+      resendAvailableAt: resendAvailableAt.toISOString(),
+      status: 200
+    };
+  } catch (error) {
+    if (
+      error?.code === 'email_not_configured' ||
+      error?.code === 'email_send_failed'
+    ) {
+      return { error: 'otp_email_failed', status: 503 };
+    }
+    throw error;
+  }
 }
 
 export async function verifyLoginOtp({ challengeId, code, trustDevice }) {
@@ -400,20 +405,54 @@ export async function updateUserProfile(userId, sessionToken, data) {
   };
 }
 
-export async function changeUserPassword(userId, { currentPassword, newPassword }) {
+export async function changeUserPassword(
+  userId,
+  { currentPassword, newPassword, newPrivateKeyEnvelope }
+) {
   const user = await prisma.user.findUnique({
-    where: { id: userId }
+    where: { id: userId },
+    select: {
+      id: true,
+      passwordHash: true,
+      privateKeyEnvelope: true
+    }
   });
 
   if (!user || !(await bcrypt.compare(currentPassword, user.passwordHash))) {
     return { error: 'invalid_credentials', status: 401 };
   }
 
+  // If E2E envelope already exists, require a simultaneous re-wrap under the new password.
+  // Otherwise the new password could not unlock the old envelope.
+  if (user.privateKeyEnvelope) {
+    if (
+      typeof newPrivateKeyEnvelope !== 'string' ||
+      newPrivateKeyEnvelope.length < 1 ||
+      newPrivateKeyEnvelope.length > 4000
+    ) {
+      return { error: 'private_key_envelope_required', status: 400 };
+    }
+  }
+
   const passwordHash = await bcrypt.hash(newPassword, 12);
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordHash }
-  });
+
+  if (user.privateKeyEnvelope) {
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          privateKeyEnvelope: newPrivateKeyEnvelope
+        }
+      });
+    });
+  } else {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash }
+    });
+  }
+
   await deleteAllSessionsForUser(user.id);
   await invalidateUserSecurityArtifacts(user.id);
 

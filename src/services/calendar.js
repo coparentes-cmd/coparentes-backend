@@ -1,6 +1,6 @@
 import { prisma } from '../lib/prisma.js';
 import {
-  addMessageToThread,
+  addSystemMessageToThread,
   getOrCreateCategoryThread
 } from './threads.js';
 import {
@@ -92,7 +92,7 @@ async function notifySwapInMessagingThread({
       category: SWAP_MESSAGING_CATEGORY
     });
 
-    await addMessageToThread({
+    await addSystemMessageToThread({
       workspaceId,
       threadId: thread.id,
       sender,

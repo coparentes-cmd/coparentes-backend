@@ -40,6 +40,21 @@ for (const key of recommended) {
   }
 }
 
+for (const keyName of ENCRYPTION_KEY_NAMES) {
+  if (!process.env[keyName]?.trim()) {
+    if (process.env.NODE_ENV === 'production') {
+      console.error(`FAIL (production): ${keyName} is required`);
+      failed = true;
+    } else {
+      console.warn(
+        `WARN: ${keyName} is not set — encrypt/decrypt will throw (no INTEGRITY_SECRET/JWT fallback)`
+      );
+    }
+  } else {
+    console.log(`OK (encryption): ${keyName}`);
+  }
+}
+
 if (process.env.NODE_ENV === 'production') {
   const frontendUrl = process.env.FRONTEND_URL?.trim();
   const corsOrigins = (process.env.CORS_ORIGINS ?? '')
@@ -73,14 +88,6 @@ if (process.env.NODE_ENV === 'production') {
   if (!process.env.INTEGRITY_SECRET?.trim()) {
     console.error('FAIL (production): INTEGRITY_SECRET is required');
     failed = true;
-  }
-
-  for (const keyName of ENCRYPTION_KEY_NAMES) {
-    const envKey = keyName;
-    if (!process.env[envKey]?.trim()) {
-      console.error(`FAIL (production): ${envKey} is required`);
-      failed = true;
-    }
   }
 }
 

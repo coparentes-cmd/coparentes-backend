@@ -1,5 +1,4 @@
 import crypto from 'crypto';
-import { env } from '../utils/env.js';
 
 const PREFIX = 'enc:v1:';
 const ALGORITHM = 'aes-256-gcm';
@@ -12,42 +11,28 @@ export const CRYPTO_KEYS = {
   KEY_GENERAL: 'KEY_GENERAL'
 };
 
+/**
+ * Resolve AES-256 key material for a named field-encryption key.
+ * Only an explicit KEY_* env var (32-byte base64) is accepted — no derivation
+ * from INTEGRITY_SECRET / JWT_SECRET / hardcoded dev seeds (key separation).
+ */
 function resolveKeyMaterial(keyName) {
-  const configured = env.encryptionKeys[keyName]?.trim();
-  if (configured) {
-    try {
-      const key = Buffer.from(configured, 'base64');
-      if (key.length === 32) {
-        return key;
-      }
-    } catch (_) {
-      // Ignore invalid base64 and fall back to derived key material.
-    }
+  const configured = (process.env[keyName] ?? '').trim();
+  if (!configured) {
+    throw new Error(
+      `Missing encryption key: ${keyName}. Set ${keyName} to a 32-byte AES key as base64 ` +
+        `(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))").`
+    );
   }
 
-  if (env.integritySecret) {
-    return crypto
-      .createHash('sha256')
-      .update(`${env.integritySecret}:${keyName}`)
-      .digest();
+  const key = Buffer.from(configured, 'base64');
+  if (key.length !== 32) {
+    throw new Error(
+      `Invalid encryption key: ${keyName} must be base64 that decodes to exactly 32 bytes (got ${key.length}).`
+    );
   }
 
-  if (env.jwtSecret) {
-    return crypto
-      .createHash('sha256')
-      .update(`${env.jwtSecret}:${keyName}`)
-      .digest();
-  }
-
-  if (env.nodeEnv === 'production') {
-    throw new Error(`Missing encryption key: ${keyName}`);
-  }
-
-  const fallbackSeed = 'coparentes-dev-only-key';
-  return crypto
-    .createHash('sha256')
-    .update(`${fallbackSeed}:${keyName}`)
-    .digest();
+  return key;
 }
 
 export function isEncrypted(value) {

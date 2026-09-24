@@ -149,6 +149,10 @@ model User {
   name             String
   email            String    @unique
   passwordHash     String
+  /// Klucz publiczny X25519 (base64) do E2E czatu. Null do czasu wygenerowania po stronie klienta.
+  publicKey        String?
+  /// Nieprzezroczysty blob klienta: zaszyfrowany klucz prywatny E2E (sól/KDF/nonce/ciphertext). Backend nie interpretuje.
+  privateKeyEnvelope String?
   role             UserRole  @default(parentA)
   twoFactorEnabled Boolean   @default(false)
   highConflictMode Boolean   @default(false)
@@ -161,6 +165,7 @@ model User {
   trustedDevices   TrustedDevice[]
   threadsCreated   Thread[]      @relation("ThreadCreator")
   messages         Message[]
+  threadKeys       ThreadKey[]
   exportJobs       ExportJob[]
   calendarEvents   CalendarEvent[] @relation("CalendarEventCreator")
   swapRequests     SwapRequest[]   @relation("SwapRequester")
@@ -263,13 +268,31 @@ model Thread {
   createdAt    DateTime       @default(now())
   lastActivity DateTime       @default(now())
   audience     ThreadAudience @default(parents)
+  /// Backend-only channel (e.g. schedule notifications) — no ThreadKey / no client E2E.
+  isSystemChannel Boolean     @default(false)
 
   messages   Message[]
+  threadKeys ThreadKey[]
   exportJobs ExportJob[]
 
   @@index([workspaceId])
   @@index([lastActivity])
   @@index([audience])
+}
+
+/// Kopia klucza symetrycznego wątku, zaszyfrowana (sealed box) kluczem publicznym uczestnika.
+model ThreadKey {
+  id           String   @id @default(cuid())
+  threadId     String
+  thread       Thread   @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  encryptedKey String // klucz wątku, sealed box → publicKey usera (base64)
+  createdAt    DateTime @default(now())
+
+  @@unique([threadId, userId])
+  @@index([threadId])
+  @@index([userId])
 }
 
 model Message {
@@ -281,7 +304,10 @@ model Message {
   senderId    String
   sender      User        @relation(fields: [senderId], references: [id])
   senderName  String
+  /// At-rest (KEY_MESSAGES): user msgs = JSON {ciphertext,nonce}; system = plaintext.
   content     String
+  /// "user" = client E2E envelope; "system" = server plaintext under KEY_MESSAGES only.
+  messageType String      @default("user")
   tone        MessageTone @default(neutral)
   sentAt      DateTime    @default(now())
   isDelivered Boolean     @default(true)

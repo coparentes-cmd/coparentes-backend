@@ -18,7 +18,10 @@ describe('serializeThread hasUnread', () => {
       threadId: 'thread_1',
       senderId: 'user_a',
       senderName: 'Anna',
-      content: 'Od Anny',
+      content: JSON.stringify({
+        ciphertext: Buffer.from('Od Anny', 'utf8').toString('base64'),
+        nonce: 'n1'
+      }),
       tone: 'neutral',
       sentAt: new Date('2026-01-01T12:00:00.000Z'),
       isDelivered: true,
@@ -30,7 +33,10 @@ describe('serializeThread hasUnread', () => {
       threadId: 'thread_1',
       senderId: 'user_b',
       senderName: 'Marek',
-      content: 'Od Marka',
+      content: JSON.stringify({
+        ciphertext: Buffer.from('Od Marka', 'utf8').toString('base64'),
+        nonce: 'n2'
+      }),
       tone: 'neutral',
       sentAt: new Date('2026-01-01T12:01:00.000Z'),
       isDelivered: true,
