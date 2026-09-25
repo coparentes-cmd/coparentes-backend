@@ -10,7 +10,7 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import bcrypt from 'bcryptjs';
 
-process.env.DATABASE_URL ??= 'postgresql://localhost:5432/coparentes_test';
+process.env.DATABASE_URL ??= 'postgresql://user:password@localhost:5432/coparentes';
 process.env.FRONTEND_URL ??= 'http://localhost:8080';
 process.env.NODE_ENV = 'test';
 process.env.OTP_ENABLED = 'true';

@@ -9,7 +9,7 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-process.env.DATABASE_URL ??= 'postgresql://localhost:5432/coparentes';
+process.env.DATABASE_URL ??= 'postgresql://user:password@localhost:5432/coparentes';
 process.env.FRONTEND_URL ??= 'http://localhost:8080';
 process.env.NODE_ENV = 'test';
 process.env.SEED_DEMO_DATA = 'false';

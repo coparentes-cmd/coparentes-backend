@@ -33,6 +33,31 @@ const weekPatternSchema = z
   })
   .passthrough();
 
+const calendarEventBodySchema = z
+  .object({
+    title: z.string().min(1).max(200),
+    description: z.string().max(2000).nullable().optional(),
+    startDate: z.string().datetime(),
+    endDate: z.string().datetime().nullable().optional(),
+    type: z.enum(['school', 'medical', 'activity', 'handover', 'holiday', 'other']),
+    childId: optionalEntityIdSchema,
+    location: z.string().max(500).nullable().optional()
+  })
+  .refine(
+    (data) => !data.endDate || new Date(data.endDate) >= new Date(data.startDate),
+    { message: 'endDate must not be before startDate', path: ['endDate'] }
+  );
+
+function zodErrorResponse(res, error) {
+  const message =
+    error?.issues?.[0]?.message ??
+    (typeof error?.message === 'string' ? error.message : undefined);
+  return res.status(400).json({
+    error: 'invalid_request',
+    ...(message ? { message } : {})
+  });
+}
+
 router.use(requireAuth);
 
 router.get('/', async (req, res, next) => {
@@ -228,16 +253,7 @@ router.patch('/slots/:slotId', requireParentRole, async (req, res, next) => {
 
 router.post('/events', requireParentRole, async (req, res, next) => {
   try {
-    const schema = z.object({
-      title: z.string().min(1),
-      description: z.string().max(2000).nullable().optional(),
-      startDate: z.string().datetime(),
-      endDate: z.string().datetime().nullable().optional(),
-      type: z.enum(['school', 'medical', 'activity', 'handover', 'holiday', 'other']),
-      childId: optionalEntityIdSchema,
-      location: z.string().max(500).nullable().optional()
-    });
-    const data = schema.parse(req.body);
+    const data = calendarEventBodySchema.parse(req.body);
 
     const event = await createCalendarEvent({
       workspaceId: req.user.workspaceId,
@@ -251,7 +267,7 @@ router.post('/events', requireParentRole, async (req, res, next) => {
       return res.status(400).json({ error: 'child_not_found' });
     }
     if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
-      return res.status(400).json({ error: 'invalid_request' });
+      return zodErrorResponse(res, error);
     }
     return next(error);
   }
@@ -259,16 +275,7 @@ router.post('/events', requireParentRole, async (req, res, next) => {
 
 router.patch('/events/:eventId', requireParentRole, async (req, res, next) => {
   try {
-    const schema = z.object({
-      title: z.string().min(1),
-      description: z.string().max(2000).nullable().optional(),
-      startDate: z.string().datetime(),
-      endDate: z.string().datetime().nullable().optional(),
-      type: z.enum(['school', 'medical', 'activity', 'handover', 'holiday', 'other']),
-      childId: optionalEntityIdSchema,
-      location: z.string().max(500).nullable().optional()
-    });
-    const data = schema.parse(req.body);
+    const data = calendarEventBodySchema.parse(req.body);
     const eventId = parseEntityId(req.params.eventId, 'eventId');
 
     const event = await updateCalendarEvent({
@@ -286,7 +293,7 @@ router.patch('/events/:eventId', requireParentRole, async (req, res, next) => {
       return res.status(400).json({ error: 'child_not_found' });
     }
     if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
-      return res.status(400).json({ error: 'invalid_request' });
+      return zodErrorResponse(res, error);
     }
     return next(error);
   }
