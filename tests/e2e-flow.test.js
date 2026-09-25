@@ -317,6 +317,13 @@ describe('E2E flow (register → join → thread → message → export → down
       token: tokenA
     });
     const threadForA = listAsA.json.threads.find((t) => t.id === threadId);
+    // UWAGA: ten test failuje od sierpnia 2026 (commit 3872cc8) - asercja zakłada że
+    // hasUnread pozostaje true dla A po tym jak A oznaczył wątek jako przeczytany,
+    // ale markThreadAsRead operuje na globalnym Message.isRead (nie per-viewer),
+    // więc po odczycie przez A, wiadomość B faktycznie staje się isRead:true dla wszystkich.
+    // To NIE jest regresja z proxy-addr/dependency bump (zweryfikowane 2026-09-24) - to
+    // przedistniejąca niespójność testu z modelem danych. Do naprawienia osobno:
+    // albo popraw asercję (oczekuj false), albo zaprojektuj per-viewer read status.
     assert.equal(
       threadForA.hasUnread,
       true,

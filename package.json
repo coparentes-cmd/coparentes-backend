@@ -38,6 +38,7 @@
     "helmet": "^8.0.0",
     "morgan": "^1.11.0",
     "prisma": "^6.8.2",
+    "proxy-addr": "2.0.8",
     "resend": "^4.0.1",
     "tesseract.js": "^5.1.1",
     "uuid": "^11.1.0",
