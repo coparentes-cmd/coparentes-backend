@@ -26,7 +26,10 @@ export async function requireAuth(req, res, next) {
       where: { id: session.userId }
     });
 
-    if (!user?.workspaceId) {
+    if (!user?.workspaceId || user.deletedAt != null) {
+      if (session) {
+        await deleteSession(token);
+      }
       return res.status(401).json({ error: 'invalid_session' });
     }
 

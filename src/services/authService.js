@@ -26,6 +26,10 @@ import {
   validateRequiredConsents
 } from './consent.service.js';
 import { sendTempPasswordEmail } from '../utils/mailer.js';
+import {
+  CRYPTO_KEYS,
+  encryptOptional
+} from './crypto.service.js';
 import crypto from 'node:crypto';
 
 function parseDateOfBirth(value) {
@@ -249,9 +253,7 @@ export async function loginUser({ email, password, req }) {
     where: { email }
   });
 
-  // Tolerate copy/paste whitespace / separators from email clients.
-  const candidate = String(password || '').replace(/[\s\-_.]+/g, '');
-  if (!user || !(await bcrypt.compare(candidate, user.passwordHash))) {
+  if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
     return { error: 'invalid_credentials', status: 401 };
   }
 
@@ -542,4 +544,57 @@ export async function requestPasswordReset(email) {
   }
 
   return generic;
+}
+
+/**
+ * Soft-delete + anonymize the caller's account.
+ * Releases parentA/parentB slot (via deletedAt filters elsewhere); keeps Message/Expense FKs.
+ */
+export async function deleteOwnAccount(userId, password) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { id: true, passwordHash: true, email: true, deletedAt: true }
+  });
+
+  if (!user || user.deletedAt != null) {
+    return { error: 'invalid_session', status: 401 };
+  }
+
+  if (!(await bcrypt.compare(password, user.passwordHash))) {
+    return { error: 'invalid_password', status: 401 };
+  }
+
+  const anonymizedName = encryptOptional(
+    'Usunięty użytkownik',
+    CRYPTO_KEYS.KEY_GENERAL
+  );
+  const passwordHash = await bcrypt.hash(crypto.randomUUID(), 12);
+  const deletedAt = new Date();
+  const placeholderEmail = `deleted-${user.id}@coparentes.internal`;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.session.deleteMany({ where: { userId: user.id } });
+    await tx.loginOtpChallenge.deleteMany({ where: { userId: user.id } });
+    await tx.trustedDevice.deleteMany({ where: { userId: user.id } });
+    await tx.threadKey.deleteMany({ where: { userId: user.id } });
+    await tx.userConsent.deleteMany({ where: { userId: user.id } });
+    await tx.messageUserTag.deleteMany({ where: { userId: user.id } });
+    await tx.emailInvite.updateMany({
+      where: { inviterId: user.id, status: 'PENDING' },
+      data: { status: 'EXPIRED' }
+    });
+    await tx.user.update({
+      where: { id: user.id },
+      data: {
+        email: placeholderEmail,
+        passwordHash,
+        name: anonymizedName,
+        publicKey: null,
+        privateKeyEnvelope: null,
+        deletedAt
+      }
+    });
+  });
+
+  return { success: true, status: 200 };
 }

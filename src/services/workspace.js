@@ -44,17 +44,18 @@ export async function refreshParentInviteCode(workspaceId, client = prisma) {
 
 export async function workspaceHasParentB(workspaceId, client = prisma) {
   const parentB = await client.user.findFirst({
-    where: { workspaceId, role: 'parentB' }
+    where: { workspaceId, role: 'parentB', deletedAt: null }
   });
   return parentB != null;
 }
 
-/** Current parentA/parentB user ids in a workspace (0–2). */
+/** Current active parentA/parentB user ids in a workspace (0–2). */
 export async function listParentUserIds(workspaceId, client = prisma) {
   const parents = await client.user.findMany({
     where: {
       workspaceId,
-      role: { in: ['parentA', 'parentB'] }
+      role: { in: ['parentA', 'parentB'] },
+      deletedAt: null
     },
     select: { id: true },
     orderBy: { createdAt: 'asc' }
@@ -170,7 +171,10 @@ export async function getWorkspaceGraph(workspaceId) {
   let workspace = await prisma.workspace.findUnique({
     where: { id: workspaceId },
     include: {
-      users: { orderBy: { createdAt: 'asc' } },
+      users: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: 'asc' }
+      },
       children: { orderBy: { name: 'asc' } }
     }
   });
@@ -185,7 +189,10 @@ export async function getWorkspaceGraph(workspaceId) {
     workspace = await prisma.workspace.findUnique({
       where: { id: workspaceId },
       include: {
-        users: { orderBy: { createdAt: 'asc' } },
+        users: {
+          where: { deletedAt: null },
+          orderBy: { createdAt: 'asc' }
+        },
         children: { orderBy: { name: 'asc' } }
       }
     });

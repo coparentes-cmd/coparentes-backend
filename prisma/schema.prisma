@@ -156,6 +156,8 @@ model User {
   role             UserRole  @default(parentA)
   twoFactorEnabled Boolean   @default(false)
   highConflictMode Boolean   @default(false)
+  /// Soft-delete + anonymization timestamp. Non-null = account closed; excluded from parent slots / members.
+  deletedAt        DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

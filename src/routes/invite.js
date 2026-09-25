@@ -119,8 +119,12 @@ router.post('/accept', requireAuth, async (req, res, next) => {
     }
 
     const [userWorkspaceMembers, inviterWorkspaceMembers] = await Promise.all([
-      prisma.user.count({ where: { workspaceId: req.user.workspaceId } }),
-      prisma.user.count({ where: { workspaceId: inviter.workspaceId } })
+      prisma.user.count({
+        where: { workspaceId: req.user.workspaceId, deletedAt: null }
+      }),
+      prisma.user.count({
+        where: { workspaceId: inviter.workspaceId, deletedAt: null }
+      })
     ]);
 
     if (userWorkspaceMembers > 1 || inviterWorkspaceMembers >= 2) {
