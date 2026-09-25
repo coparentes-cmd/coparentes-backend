@@ -387,6 +387,12 @@ export async function updateUserProfile(userId, sessionToken, data) {
   if (data.twoFactorEnabled !== undefined) {
     updates.twoFactorEnabled = data.twoFactorEnabled;
   }
+  if (data.themeMode !== undefined) {
+    updates.themeMode = data.themeMode;
+  }
+  if (data.colorScheme !== undefined) {
+    updates.colorScheme = data.colorScheme;
+  }
 
   if (Object.keys(updates).length === 0) {
     return { error: 'invalid_request', status: 400 };

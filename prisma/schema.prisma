@@ -156,6 +156,9 @@ model User {
   role             UserRole  @default(parentA)
   twoFactorEnabled Boolean   @default(false)
   highConflictMode Boolean   @default(false)
+  /// Appearance prefs (Flutter AppProvider themeMode / colorScheme).
+  themeMode        String    @default("light")
+  colorScheme      String    @default("teal")
   /// Soft-delete + anonymization timestamp. Non-null = account closed; excluded from parent slots / members.
   deletedAt        DateTime?
   createdAt        DateTime  @default(now())

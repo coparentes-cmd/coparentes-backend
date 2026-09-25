@@ -22,6 +22,8 @@ export function serializeUser(user) {
     childProfileId: user.childProfileId ?? null,
     twoFactorEnabled: user.twoFactorEnabled,
     highConflictMode: user.highConflictMode,
+    themeMode: user.themeMode,
+    colorScheme: user.colorScheme,
     createdAt: user.createdAt.toISOString()
   };
 }

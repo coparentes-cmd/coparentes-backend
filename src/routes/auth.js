@@ -391,7 +391,11 @@ router.post('/logout', requireAuth, async (req, res, next) => {
 const profileSchema = z.object({
   name: z.string().trim().min(2).max(120).optional(),
   highConflictMode: z.boolean().optional(),
-  twoFactorEnabled: z.boolean().optional()
+  twoFactorEnabled: z.boolean().optional(),
+  themeMode: z.enum(['light', 'dark']).optional(),
+  colorScheme: z
+    .enum(['teal', 'blue', 'purple', 'rose', 'amber', 'green'])
+    .optional()
 });
 
 router.patch('/profile', requireAuth, async (req, res, next) => {
