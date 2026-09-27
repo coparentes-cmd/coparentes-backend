@@ -500,6 +500,7 @@ model CalendarEvent {
   createdBy   User              @relation("CalendarEventCreator", fields: [createdById], references: [id])
   location    String?
   createdAt   DateTime          @default(now())
+  deletedAt   DateTime?
 
   @@index([workspaceId])
   @@index([startDate])

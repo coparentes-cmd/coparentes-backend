@@ -5,6 +5,7 @@ import { requireParentRole } from '../middleware/rbac.js';
 import {
   createCalendarEvent,
   createSwapRequest,
+  deleteCalendarEvent,
   getCalendarSnapshot,
   respondToSwapRequest,
   updateCalendarEvent
@@ -294,6 +295,29 @@ router.patch('/events/:eventId', requireParentRole, async (req, res, next) => {
     }
     if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return zodErrorResponse(res, error);
+    }
+    return next(error);
+  }
+});
+
+router.delete('/events/:eventId', requireParentRole, async (req, res, next) => {
+  try {
+    const eventId = parseEntityId(req.params.eventId, 'eventId');
+    const event = await deleteCalendarEvent({
+      workspaceId: req.user.workspaceId,
+      eventId,
+      requester: req.user
+    });
+    return res.status(200).json(event);
+  } catch (error) {
+    if (error?.code === 'event_not_found') {
+      return res.status(404).json({ error: 'event_not_found' });
+    }
+    if (error?.code === 'forbidden') {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+    if (error?.code === 'invalid_id') {
+      return res.status(400).json({ error: 'invalid_request' });
     }
     return next(error);
   }

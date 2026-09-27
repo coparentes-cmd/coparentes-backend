@@ -210,7 +210,8 @@ export function serializeCalendarEvent(event) {
     type: event.type,
     childId: event.childId,
     createdBy: event.createdById,
-    location: event.location
+    location: event.location,
+    deletedAt: event.deletedAt ? event.deletedAt.toISOString() : null
   };
 }
 
@@ -262,6 +263,7 @@ export async function listCalendarExportItems(workspaceId, fromDate, toDate) {
     prisma.calendarEvent.findMany({
       where: {
         workspaceId,
+        deletedAt: null,
         startDate: { lte: to },
         OR: [{ endDate: { gte: from } }, { endDate: null, startDate: { gte: from } }]
       },
@@ -466,6 +468,38 @@ export async function updateCalendarEvent({
       childId: childId ?? null,
       location: location ?? null
     }
+  });
+
+  return serializeCalendarEvent(row);
+}
+
+export async function deleteCalendarEvent({
+  workspaceId,
+  eventId,
+  requester
+}) {
+  const existing = await prisma.calendarEvent.findFirst({
+    where: { id: eventId, workspaceId }
+  });
+  if (!existing) {
+    const error = new Error('event_not_found');
+    error.code = 'event_not_found';
+    throw error;
+  }
+  if (existing.deletedAt) {
+    const error = new Error('event_not_found'); // już usunięte = jakby nie istniało dla tej operacji
+    error.code = 'event_not_found';
+    throw error;
+  }
+  if (existing.createdById !== requester.id) {
+    const error = new Error('forbidden');
+    error.code = 'forbidden';
+    throw error;
+  }
+
+  const row = await prisma.calendarEvent.update({
+    where: { id: eventId },
+    data: { deletedAt: new Date() }
   });
 
   return serializeCalendarEvent(row);
