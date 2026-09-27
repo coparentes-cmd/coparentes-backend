@@ -78,26 +78,27 @@ router.get('/expenses/:expenseId/receipt', requireNonChildRole, async (req, res,
 
 router.post('/expenses', requireParentRole, async (req, res, next) => {
   try {
+    // paidBy / status intentionally absent from schema — stripped if client sends them.
+    // Server forces paidBy = requester and status = pending in createExpense.
     const schema = z.object({
       title: z.string().min(1),
-      amount: z.number().positive(),
+      amount: z.number().positive().max(1_000_000),
       currency: z.string().min(3).max(3).optional(),
       category: z.string().min(1),
       childIds: z.array(entityIdSchema).max(10).optional().default([]),
-      paidBy: entityIdSchema,
       splitRatio: z.number().min(0).max(1),
       date: z.string().datetime(),
       receiptUrl: z.string().nullable().optional(),
       receiptContentBase64: z.string().nullable().optional(),
       receiptMimeType: z.string().max(100).nullable().optional(),
-      status: z.enum(['pending', 'accepted', 'disputed', 'settled']).optional(),
       note: z.string().max(2000).nullable().optional()
     });
     const data = schema.parse(req.body);
 
     const expense = await createExpense({
       workspaceId: req.user.workspaceId,
-      ...data
+      ...data,
+      paidBy: req.user.id
     });
 
     return res.status(201).json(expense);
@@ -130,6 +131,7 @@ router.post('/expenses/:expenseId/status', requireParentRole, async (req, res, n
     const expense = await updateExpenseStatus({
       workspaceId: req.user.workspaceId,
       expenseId,
+      actorUserId: req.user.id,
       status: data.status,
       note: data.note
     });
@@ -140,6 +142,9 @@ router.post('/expenses/:expenseId/status', requireParentRole, async (req, res, n
 
     return res.json(expense);
   } catch (error) {
+    if (error?.code === 'forbidden_status_transition') {
+      return res.status(403).json({ error: 'forbidden_status_transition' });
+    }
     if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
       return res.status(400).json({ error: 'invalid_request' });
     }

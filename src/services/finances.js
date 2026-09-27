@@ -6,6 +6,17 @@ import { validateReceiptBase64 } from './receiptOcr.js';
 
 const expenseChildrenInclude = { children: true };
 
+/** Round monetary amounts to 2 decimal places (float debt: prefer Int grosze later). */
+function roundMoney(amount) {
+  return Math.round(Number(amount) * 100) / 100;
+}
+
+function forbiddenStatusTransition() {
+  const error = new Error('forbidden_status_transition');
+  error.code = 'forbidden_status_transition';
+  return error;
+}
+
 export async function listExpensesInRange(workspaceId, fromDate, toDate) {
   const from = new Date(fromDate);
   const to = new Date(toDate);
@@ -65,7 +76,6 @@ export async function createExpense({
   receiptUrl,
   receiptContentBase64,
   receiptMimeType,
-  status,
   note
 }) {
   const payer = await prisma.user.findFirst({
@@ -86,10 +96,14 @@ export async function createExpense({
     validateReceiptBase64(receiptContentBase64);
   }
 
+  // Always pending — never trust a client-supplied status (route also omits it).
+  const status = 'pending';
+  const roundedAmount = roundMoney(amount);
+
   const payload = {
     workspaceId,
     title,
-    amount,
+    amount: roundedAmount,
     currency: currency ?? 'PLN',
     category,
     childIds: resolvedChildIds,
@@ -97,7 +111,7 @@ export async function createExpense({
     splitRatio,
     date,
     receiptUrl: receiptUrl ?? null,
-    status: status ?? 'pending',
+    status,
     note: note ?? null,
     createdAt: new Date().toISOString()
   };
@@ -107,7 +121,7 @@ export async function createExpense({
       data: {
         workspaceId,
         title: encryptOptional(title, CRYPTO_KEYS.KEY_FINANCE),
-        amount,
+        amount: roundedAmount,
         currency: currency ?? 'PLN',
         category,
         // Legacy column kept until drop migration; new API uses ExpenseChild only.
@@ -122,7 +136,7 @@ export async function createExpense({
         receiptMimeType: receiptContentBase64
           ? (receiptMimeType ?? 'image/jpeg')
           : null,
-        status: status ?? 'pending',
+        status,
         note: encryptOptional(note ?? null, CRYPTO_KEYS.KEY_FINANCE),
         hash: createIntegrityHash(payload)
       }
@@ -179,6 +193,7 @@ export async function getExpenseReceipt(workspaceId, expenseId) {
 export async function updateExpenseStatus({
   workspaceId,
   expenseId,
+  actorUserId,
   status,
   note
 }) {
@@ -190,9 +205,48 @@ export async function updateExpenseStatus({
     return null;
   }
 
-  const data = { status };
+  const from = existing.status;
+  const to = status;
+  const isPayer = actorUserId === existing.paidById;
+
+  // disputed is terminal — no further transitions.
+  if (from === 'disputed') {
+    throw forbiddenStatusTransition();
+  }
+
+  // settled is terminal — no further transitions.
+  if (from === 'settled') {
+    throw forbiddenStatusTransition();
+  }
+
+  // pending -> accepted: only the other parent (not the payer who created it).
+  if (from === 'pending' && to === 'accepted') {
+    if (isPayer) {
+      throw forbiddenStatusTransition();
+    }
+  }
+  // pending -> disputed: same — only the non-payer may dispute.
+  else if (from === 'pending' && to === 'disputed') {
+    if (isPayer) {
+      throw forbiddenStatusTransition();
+    }
+  }
+  // accepted -> settled: only the payer confirms they received reimbursement.
+  else if (from === 'accepted' && to === 'settled') {
+    if (!isPayer) {
+      throw forbiddenStatusTransition();
+    }
+  }
+  // Everything else (pending->settled, accepted->pending, same->same, …) is forbidden.
+  else {
+    throw forbiddenStatusTransition();
+  }
+
+  const data = { status: to };
   if (note !== undefined) {
-    data.note = note;
+    // Same KEY_FINANCE encrypt path as createExpense; serialize uses decryptOptionalSafe
+    // which falls back to plaintext for any legacy rows written before this fix.
+    data.note = encryptOptional(note, CRYPTO_KEYS.KEY_FINANCE);
   }
 
   const updated = await prisma.expense.update({
