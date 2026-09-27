@@ -4,6 +4,8 @@ import { CRYPTO_KEYS, decryptOptional, encryptOptional } from './crypto.service.
 import { serializeExpense } from './calendar.js';
 import { validateReceiptBase64 } from './receiptOcr.js';
 
+const expenseChildrenInclude = { children: true };
+
 export async function listExpensesInRange(workspaceId, fromDate, toDate) {
   const from = new Date(fromDate);
   const to = new Date(toDate);
@@ -13,6 +15,7 @@ export async function listExpensesInRange(workspaceId, fromDate, toDate) {
       workspaceId,
       date: { gte: from, lte: to }
     },
+    include: expenseChildrenInclude,
     orderBy: { date: 'desc' }
   });
 
@@ -22,10 +25,31 @@ export async function listExpensesInRange(workspaceId, fromDate, toDate) {
 export async function listExpenses(workspaceId) {
   const rows = await prisma.expense.findMany({
     where: { workspaceId },
+    include: expenseChildrenInclude,
     orderBy: { date: 'desc' }
   });
 
   return rows.map(serializeExpense);
+}
+
+async function assertChildrenInWorkspace(workspaceId, childIds) {
+  const uniqueIds = [...new Set(childIds)];
+  if (uniqueIds.length === 0) {
+    return [];
+  }
+
+  const found = await prisma.child.findMany({
+    where: { workspaceId, id: { in: uniqueIds } },
+    select: { id: true }
+  });
+
+  if (found.length !== uniqueIds.length) {
+    const error = new Error('child_not_found');
+    error.code = 'child_not_found';
+    throw error;
+  }
+
+  return uniqueIds;
 }
 
 export async function createExpense({
@@ -34,7 +58,7 @@ export async function createExpense({
   amount,
   currency,
   category,
-  childId,
+  childIds = [],
   paidBy,
   splitRatio,
   date,
@@ -53,16 +77,10 @@ export async function createExpense({
     throw error;
   }
 
-  if (childId) {
-    const child = await prisma.child.findFirst({
-      where: { id: childId, workspaceId }
-    });
-    if (!child) {
-      const error = new Error('child_not_found');
-      error.code = 'child_not_found';
-      throw error;
-    }
-  }
+  const resolvedChildIds = await assertChildrenInWorkspace(
+    workspaceId,
+    Array.isArray(childIds) ? childIds : []
+  );
 
   if (receiptContentBase64) {
     validateReceiptBase64(receiptContentBase64);
@@ -74,7 +92,7 @@ export async function createExpense({
     amount,
     currency: currency ?? 'PLN',
     category,
-    childId: childId ?? null,
+    childIds: resolvedChildIds,
     paidById: paidBy,
     splitRatio,
     date,
@@ -84,37 +102,55 @@ export async function createExpense({
     createdAt: new Date().toISOString()
   };
 
-  const row = await prisma.expense.create({
-    data: {
-      workspaceId,
-      title: encryptOptional(title, CRYPTO_KEYS.KEY_FINANCE),
-      amount,
-      currency: currency ?? 'PLN',
-      category,
-      childId: childId ?? null,
-      paidById: paidBy,
-      splitRatio,
-      date: new Date(date),
-      receiptUrl: receiptContentBase64 ? null : receiptUrl ?? null,
-      receiptContentBase64: receiptContentBase64
-        ? encryptOptional(receiptContentBase64, CRYPTO_KEYS.KEY_FINANCE)
-        : null,
-      receiptMimeType: receiptContentBase64 ? (receiptMimeType ?? 'image/jpeg') : null,
-      status: status ?? 'pending',
-      note: encryptOptional(note ?? null, CRYPTO_KEYS.KEY_FINANCE),
-      hash: createIntegrityHash(payload)
-    }
-  });
-
-  if (receiptContentBase64) {
-    const updated = await prisma.expense.update({
-      where: { id: row.id },
+  const row = await prisma.$transaction(async (tx) => {
+    const created = await tx.expense.create({
       data: {
-        receiptUrl: `finances/expenses/${row.id}/receipt`
+        workspaceId,
+        title: encryptOptional(title, CRYPTO_KEYS.KEY_FINANCE),
+        amount,
+        currency: currency ?? 'PLN',
+        category,
+        // Legacy column kept until drop migration; new API uses ExpenseChild only.
+        childId: null,
+        paidById: paidBy,
+        splitRatio,
+        date: new Date(date),
+        receiptUrl: receiptContentBase64 ? null : receiptUrl ?? null,
+        receiptContentBase64: receiptContentBase64
+          ? encryptOptional(receiptContentBase64, CRYPTO_KEYS.KEY_FINANCE)
+          : null,
+        receiptMimeType: receiptContentBase64
+          ? (receiptMimeType ?? 'image/jpeg')
+          : null,
+        status: status ?? 'pending',
+        note: encryptOptional(note ?? null, CRYPTO_KEYS.KEY_FINANCE),
+        hash: createIntegrityHash(payload)
       }
     });
-    return serializeExpense(updated);
-  }
+
+    if (resolvedChildIds.length > 0) {
+      await tx.expenseChild.createMany({
+        data: resolvedChildIds.map((childId) => ({
+          expenseId: created.id,
+          childId
+        }))
+      });
+    }
+
+    if (receiptContentBase64) {
+      await tx.expense.update({
+        where: { id: created.id },
+        data: {
+          receiptUrl: `finances/expenses/${created.id}/receipt`
+        }
+      });
+    }
+
+    return tx.expense.findUniqueOrThrow({
+      where: { id: created.id },
+      include: expenseChildrenInclude
+    });
+  });
 
   return serializeExpense(row);
 }
@@ -161,7 +197,8 @@ export async function updateExpenseStatus({
 
   const updated = await prisma.expense.update({
     where: { id: existing.id },
-    data
+    data,
+    include: expenseChildrenInclude
   });
 
   return serializeExpense(updated);

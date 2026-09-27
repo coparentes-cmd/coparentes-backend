@@ -230,13 +230,17 @@ export function serializeSwapRequest(swap) {
 }
 
 export function serializeExpense(expense) {
+  const childIds = Array.isArray(expense.children)
+    ? expense.children.map((row) => row.childId)
+    : [];
+
   return {
     id: expense.id,
     title: decryptOptionalSafe(expense.title, CRYPTO_KEYS.KEY_FINANCE, ''),
     amount: expense.amount,
     currency: expense.currency,
     category: expense.category,
-    childId: expense.childId,
+    childIds,
     paidBy: expense.paidById,
     splitRatio: expense.splitRatio,
     date: expense.date.toISOString(),

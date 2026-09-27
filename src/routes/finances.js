@@ -9,7 +9,7 @@ import {
   updateExpenseStatus
 } from '../services/finances.js';
 import { parseReceiptImage } from '../services/receiptOcr.js';
-import { entityIdSchema, optionalEntityIdSchema, parseEntityId } from '../utils/ids.js';
+import { entityIdSchema, parseEntityId } from '../utils/ids.js';
 
 const router = express.Router();
 
@@ -83,7 +83,7 @@ router.post('/expenses', requireParentRole, async (req, res, next) => {
       amount: z.number().positive(),
       currency: z.string().min(3).max(3).optional(),
       category: z.string().min(1),
-      childId: optionalEntityIdSchema,
+      childIds: z.array(entityIdSchema).max(10).optional().default([]),
       paidBy: entityIdSchema,
       splitRatio: z.number().min(0).max(1),
       date: z.string().datetime(),

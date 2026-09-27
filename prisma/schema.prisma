@@ -217,6 +217,7 @@ model Child {
 
   calendarEvents CalendarEvent[]
   expenses       Expense[]
+  expenseChildren ExpenseChild[]
   documents      Document[]
   linkedAccount  User?      @relation("ChildLinkedAccount")
 
@@ -533,8 +534,10 @@ model Expense {
   amount      Float
   currency    String        @default("PLN")
   category    String
+  /// Legacy single-child FK. Kept until data is backfilled into ExpenseChild, then dropped.
   childId     String?
   child       Child?        @relation(fields: [childId], references: [id], onDelete: SetNull)
+  children    ExpenseChild[]
   paidById    String
   paidBy      User          @relation("ExpensePayer", fields: [paidById], references: [id])
   splitRatio  Float
@@ -551,4 +554,18 @@ model Expense {
   @@index([workspaceId])
   @@index([date])
   @@index([status])
+}
+
+/// Many-to-many: one expense can be tagged to multiple children (empty = whole family).
+model ExpenseChild {
+  id        String   @id @default(cuid())
+  expenseId String
+  expense   Expense  @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  childId   String
+  child     Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([expenseId, childId])
+  @@index([expenseId])
+  @@index([childId])
 }
