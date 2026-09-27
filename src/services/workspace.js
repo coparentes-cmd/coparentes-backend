@@ -2,7 +2,7 @@ import { prisma } from '../lib/prisma.js';
 import { createInviteCode } from '../utils/security.js';
 import { env } from '../utils/env.js';
 import { serializeChild, serializeUser } from './serializers.js';
-import { CRYPTO_KEYS, encryptOptional } from './crypto.service.js';
+import { CRYPTO_KEYS, encryptOptional, decryptOptionalSafe } from './crypto.service.js';
 
 export function parentInviteExpiresAt(from = new Date()) {
   return new Date(from.getTime() + env.parentInviteTtlHours * 60 * 60 * 1000);
@@ -143,7 +143,7 @@ export async function getChildJoinPreview(childInviteCode) {
     workspaceName: workspace.name,
     children: children.map((child) => ({
       id: child.id,
-      name: child.name,
+      name: decryptOptionalSafe(child.name, CRYPTO_KEYS.KEY_GENERAL, 'Dziecko'),
       hasAccount: child.linkedAccount != null
     }))
   };

@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { requireNonChildRole, requireParentRole } from '../middleware/rbac.js';
 import {
   createDocument,
+  deleteDocument,
   getDocumentDownload,
   isAllowedDocumentCategory,
   listDocuments
@@ -53,6 +54,29 @@ router.get('/:documentId/download', requireNonChildRole, async (req, res, next) 
   }
 });
 
+router.delete('/:documentId', requireNonChildRole, async (req, res, next) => {
+  try {
+    const documentId = parseEntityId(req.params.documentId, 'documentId');
+    const result = await deleteDocument({
+      workspaceId: req.user.workspaceId,
+      documentId,
+      requesterId: req.user.id
+    });
+    return res.json(result);
+  } catch (error) {
+    if (error?.code === 'document_not_found') {
+      return res.status(404).json({ error: 'document_not_found' });
+    }
+    if (error?.code === 'forbidden') {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+    if (error?.name === 'ZodError' || error?.code === 'invalid_id') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
 router.post('/', requireParentRole, async (req, res, next) => {
   try {
     const schema = z.object({
@@ -61,7 +85,8 @@ router.post('/', requireParentRole, async (req, res, next) => {
       childId: optionalEntityIdSchema,
       fileName: z.string().trim().min(1).max(255).nullable().optional(),
       mimeType: z.string().trim().min(1).max(120).nullable().optional(),
-      fileUrl: z.string().url().nullable().optional(),
+      // fileUrl intentionally omitted — create accepts contentBase64 only;
+      // legacy rows with fileUrl still serialize/read normally.
       contentBase64: z.string().max(7_500_000).nullable().optional()
     });
     const data = schema.parse(req.body);
@@ -70,15 +95,13 @@ router.post('/', requireParentRole, async (req, res, next) => {
       return res.status(400).json({ error: 'invalid_document_category' });
     }
 
-    if (!data.fileUrl && !data.contentBase64) {
+    if (!data.contentBase64) {
       return res.status(400).json({ error: 'file_required' });
     }
 
-    if (data.contentBase64) {
-      const byteLength = decodedBase64ByteLength(data.contentBase64);
-      if (byteLength > MAX_DOCUMENT_BYTES) {
-        return res.status(413).json({ error: 'file_too_large' });
-      }
+    const byteLength = decodedBase64ByteLength(data.contentBase64);
+    if (byteLength > MAX_DOCUMENT_BYTES) {
+      return res.status(413).json({ error: 'file_too_large' });
     }
 
     const document = await createDocument({
@@ -91,6 +114,23 @@ router.post('/', requireParentRole, async (req, res, next) => {
   } catch (error) {
     if (error?.code === 'child_not_found') {
       return res.status(400).json({ error: 'child_not_found' });
+    }
+    if (error?.code === 'unsupported_file_type') {
+      return res.status(400).json({ error: 'unsupported_file_type' });
+    }
+    if (error?.code === 'workspace_document_limit_reached') {
+      return res.status(413).json({
+        error: 'workspace_document_limit_reached',
+        message:
+          'Osiągnięto limit dokumentów dla tej rodziny (200 plików).'
+      });
+    }
+    if (error?.code === 'workspace_storage_limit_reached') {
+      return res.status(413).json({
+        error: 'workspace_storage_limit_reached',
+        message:
+          'Osiągnięto limit miejsca na dokumenty (100 MB). Usuń nieużywane pliki prywatne, aby zwolnić miejsce.'
+      });
     }
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });

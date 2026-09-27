@@ -124,7 +124,9 @@ export function serializeDocument(document) {
     title: document.title,
     category: document.category,
     childId: document.childId,
-    childName: document.child?.name ?? null,
+    childName: document.child
+      ? decryptOptionalSafe(document.child.name, CRYPTO_KEYS.KEY_GENERAL, 'Dziecko')
+      : null,
     fileName: document.fileName,
     mimeType: document.mimeType,
     fileUrl: document.fileUrl,
