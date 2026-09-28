@@ -32,6 +32,7 @@ import {
   otpVerifyLimiter,
   tryConsumeOtpIssueAttempt
 } from '../middleware/otpRateLimit.js';
+import { PASSWORD_MIN_LENGTH } from '../utils/passwordPolicy.js';
 
 const router = express.Router();
 
@@ -121,7 +122,7 @@ const consentsSchema = z.object({
 const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().trim().toLowerCase().email(),
-  password: z.string().min(10),
+  password: z.string().min(PASSWORD_MIN_LENGTH),
   workspaceName: z.string().min(2),
   consents: consentsSchema
 });
@@ -132,7 +133,7 @@ const joinSchema = z
     childInviteCode: z.string().min(6).optional(),
     name: z.string().min(2),
     email: z.string().trim().toLowerCase().email(),
-    password: z.string().min(10),
+    password: z.string().min(PASSWORD_MIN_LENGTH),
     childProfileId: z.string().optional()
   })
   .refine((data) => data.inviteCode || data.childInviteCode, {
@@ -146,13 +147,13 @@ const childJoinPreviewSchema = z.object({
 const childAccessSchema = z.object({
   childInviteCode: z.string().min(6),
   dateOfBirth: z.string().datetime(),
-  password: z.string().min(10),
+  password: z.string().min(PASSWORD_MIN_LENGTH),
   name: z.string().trim().min(2).optional()
 });
 
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
-  password: z.string().min(8)
+  password: z.string().min(PASSWORD_MIN_LENGTH)
 });
 
 async function issueSessionResponse(user, statusCode, res, { trustedDeviceToken } = {}) {
@@ -421,8 +422,8 @@ router.patch('/profile', requireAuth, async (req, res, next) => {
 });
 
 const passwordSchema = z.object({
-  currentPassword: z.string().min(8),
-  newPassword: z.string().min(8),
+  currentPassword: z.string().min(PASSWORD_MIN_LENGTH),
+  newPassword: z.string().min(PASSWORD_MIN_LENGTH),
   // Required by service when user already has privateKeyEnvelope (E2E).
   newPrivateKeyEnvelope: z.string().min(1).max(4000).optional()
 });
