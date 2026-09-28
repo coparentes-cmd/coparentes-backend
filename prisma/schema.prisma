@@ -156,6 +156,8 @@ model User {
   role             UserRole  @default(parentA)
   twoFactorEnabled Boolean   @default(false)
   highConflictMode Boolean   @default(false)
+  /// Set true after forgot-password temp password; cleared on successful password change.
+  mustChangePassword Boolean @default(false)
   /// Appearance prefs (Flutter AppProvider themeMode / colorScheme).
   themeMode        String    @default("light")
   colorScheme      String    @default("teal")

@@ -208,7 +208,18 @@ export async function sendOtpEmail({ to, code }) {
   });
 }
 
+/** Last temp password when MAILER_STUB_SUCCESS=true (tests only). */
+let stubLastTempPassword = null;
+
+/** @returns {string | null} */
+export function getStubLastTempPassword() {
+  return stubLastTempPassword;
+}
+
 export async function sendTempPasswordEmail({ to, tempPassword }) {
+  if (process.env.MAILER_STUB_SUCCESS === 'true') {
+    stubLastTempPassword = tempPassword;
+  }
   const safePassword = escapeHtml(tempPassword);
   try {
     return await dispatchEmail({

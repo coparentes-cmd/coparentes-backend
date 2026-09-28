@@ -22,6 +22,7 @@ export function serializeUser(user) {
     childProfileId: user.childProfileId ?? null,
     twoFactorEnabled: user.twoFactorEnabled,
     highConflictMode: user.highConflictMode,
+    mustChangePassword: Boolean(user.mustChangePassword),
     themeMode: user.themeMode,
     colorScheme: user.colorScheme,
     createdAt: user.createdAt.toISOString()

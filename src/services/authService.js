@@ -450,14 +450,15 @@ export async function changeUserPassword(
         where: { id: user.id },
         data: {
           passwordHash,
-          privateKeyEnvelope: newPrivateKeyEnvelope
+          privateKeyEnvelope: newPrivateKeyEnvelope,
+          mustChangePassword: false
         }
       });
     });
   } else {
     await prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash }
+      data: { passwordHash, mustChangePassword: false }
     });
   }
 
@@ -500,12 +501,13 @@ export async function requestPasswordReset(email) {
   }
 
   const previousHash = user.passwordHash;
+  const previousMustChangePassword = user.mustChangePassword;
   const tempPassword = generateTempPassword();
   const passwordHash = await bcrypt.hash(tempPassword, 12);
 
   await prisma.user.update({
     where: { id: user.id },
-    data: { passwordHash }
+    data: { passwordHash, mustChangePassword: true }
   });
   await deleteAllSessionsForUser(user.id);
   await invalidateUserSecurityArtifacts(user.id);
@@ -533,7 +535,10 @@ export async function requestPasswordReset(email) {
     if (code !== 'email_send_timeout') {
       await prisma.user.update({
         where: { id: user.id },
-        data: { passwordHash: previousHash }
+        data: {
+          passwordHash: previousHash,
+          mustChangePassword: previousMustChangePassword
+        }
       });
     }
 
