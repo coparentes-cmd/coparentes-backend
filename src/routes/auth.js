@@ -57,7 +57,7 @@ const authActionLimiter = rateLimit({
 // WARNING: default MemoryStore — per-process only (see otpRateLimit.js / README → Known limitations).
 const loginIpLimiterStore = new MemoryStore();
 const loginIpLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 5 * 60 * 1000,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
@@ -69,7 +69,7 @@ const loginIpLimiter = rateLimit({
 // WARNING: default MemoryStore — per-process only (see otpRateLimit.js / README → Known limitations).
 const loginEmailLimiterStore = new MemoryStore();
 const loginEmailLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 5 * 60 * 1000,
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
