@@ -136,7 +136,8 @@ Content-Type: application/json
 {
   "currentPassword": "stareHaslo123",
   "newPassword": "noweHaslo4567",
-  "newPrivateKeyEnvelope": "v1.opaque.rewrapped-under-new-password..."
+  "newPrivateKeyEnvelope": "v1.opaque.rewrapped-under-new-password...",
+  "newPublicKey": "BASE64_X25519_32_BYTES_OPTIONAL"
 }
 ```
 
@@ -145,15 +146,20 @@ Content-Type: application/json
 | `currentPassword` | `string.min(8)` | wymagane |
 | `newPassword` | `string.min(8)` | wymagane |
 | `newPrivateKeyEnvelope` | `string.min(1).max(4000).optional()` | **warunkowo wymagane** w logice serwisu |
+| `newPublicKey` | `string.min(1).optional()` | opcjonalne; gdy podane → wymaga też envelope; walidacja X25519 32 B |
 
 ### Logika serwisu
 
 1. Weryfikacja `currentPassword` → przy błędzie `401 { "error": "invalid_credentials" }`.
-2. Jeśli user **ma** już `privateKeyEnvelope` w DB:
+2. Jeśli podano `newPublicKey`:
+   - nieprawidłowy base64 / ≠ 32 B → `400 { "error": "invalid_public_key" }`;
+   - brak `newPrivateKeyEnvelope` → `400 { "error": "private_key_envelope_required" }`.
+3. Jeśli user **ma** już `privateKeyEnvelope` w DB:
    - brak / pusty / >4000 `newPrivateKeyEnvelope` → `400 { "error": "private_key_envelope_required" }` (hasło **nie** jest zmieniane);
-   - podany envelope → `passwordHash` **oraz** `privateKeyEnvelope` w **jednej** transakcji Prisma.
-3. Jeśli user **nie ma** jeszcze `privateKeyEnvelope` (konto sprzed E2E) → zmiana hasła jak dotychczas; envelope opcjonalne i ignorowane przy braku.
-4. Po sukcesie: unieważnienie wszystkich sesji + artefaktów bezpieczeństwa (jak dotychczas).
+   - podany envelope → `passwordHash` **oraz** `privateKeyEnvelope` w **jednej** transakcji Prisma;
+   - jeśli dodatkowo `newPublicKey` → w tej samej transakcji zapis `publicKey` (pełna rotacja pary tożsamości, np. po orphaned envelope).
+4. Jeśli user **nie ma** jeszcze `privateKeyEnvelope` (konto sprzed E2E) → zmiana hasła jak dotychczas; envelope/publicKey opcjonalne.
+5. Po sukcesie: unieważnienie wszystkich sesji + artefaktów bezpieczeństwa (jak dotychczas).
 
 ### Responses
 

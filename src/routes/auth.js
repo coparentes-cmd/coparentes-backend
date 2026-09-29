@@ -425,7 +425,10 @@ const passwordSchema = z.object({
   currentPassword: z.string().min(PASSWORD_MIN_LENGTH),
   newPassword: z.string().min(PASSWORD_MIN_LENGTH),
   // Required by service when user already has privateKeyEnvelope (E2E).
-  newPrivateKeyEnvelope: z.string().min(1).max(4000).optional()
+  newPrivateKeyEnvelope: z.string().min(1).max(4000).optional(),
+  // Optional: replace identity key pair (orphaned envelope / key loss) in the
+  // same atomic password update. When set, service also requires envelope.
+  newPublicKey: z.string().min(1).optional()
 });
 
 const forgotPasswordSchema = z.object({

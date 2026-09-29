@@ -30,6 +30,7 @@ import {
   CRYPTO_KEYS,
   encryptOptional
 } from './crypto.service.js';
+import { isValidX25519PublicKeyBase64 } from '../utils/x25519PublicKey.js';
 import crypto from 'node:crypto';
 
 function parseDateOfBirth(value) {
@@ -415,7 +416,7 @@ export async function updateUserProfile(userId, sessionToken, data) {
 
 export async function changeUserPassword(
   userId,
-  { currentPassword, newPassword, newPrivateKeyEnvelope }
+  { currentPassword, newPassword, newPrivateKeyEnvelope, newPublicKey }
 ) {
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -430,27 +431,40 @@ export async function changeUserPassword(
     return { error: 'invalid_credentials', status: 401 };
   }
 
-  // If E2E envelope already exists, require a simultaneous re-wrap under the new password.
-  // Otherwise the new password could not unlock the old envelope.
-  if (user.privateKeyEnvelope) {
-    if (
-      typeof newPrivateKeyEnvelope !== 'string' ||
-      newPrivateKeyEnvelope.length < 1 ||
-      newPrivateKeyEnvelope.length > 4000
-    ) {
+  const hasNewPublicKey =
+    typeof newPublicKey === 'string' && newPublicKey.length > 0;
+  const hasNewEnvelope =
+    typeof newPrivateKeyEnvelope === 'string' &&
+    newPrivateKeyEnvelope.length >= 1 &&
+    newPrivateKeyEnvelope.length <= 4000;
+
+  // Replacing the identity key requires both public key + envelope in one write.
+  if (hasNewPublicKey) {
+    if (!isValidX25519PublicKeyBase64(newPublicKey)) {
+      return { error: 'invalid_public_key', status: 400 };
+    }
+    if (!hasNewEnvelope) {
       return { error: 'private_key_envelope_required', status: 400 };
     }
   }
 
+  // If E2E envelope already exists, require a simultaneous re-wrap (or full key
+  // replacement) under the new password. Otherwise the new password could not
+  // unlock the old envelope.
+  if (user.privateKeyEnvelope && !hasNewEnvelope) {
+    return { error: 'private_key_envelope_required', status: 400 };
+  }
+
   const passwordHash = await bcrypt.hash(newPassword, 12);
 
-  if (user.privateKeyEnvelope) {
+  if (user.privateKeyEnvelope || hasNewEnvelope) {
     await prisma.$transaction(async (tx) => {
       await tx.user.update({
         where: { id: user.id },
         data: {
           passwordHash,
           privateKeyEnvelope: newPrivateKeyEnvelope,
+          ...(hasNewPublicKey ? { publicKey: newPublicKey } : {}),
           mustChangePassword: false
         }
       });

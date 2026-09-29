@@ -2,6 +2,7 @@ import express from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
+import { isValidX25519PublicKeyBase64 } from '../utils/x25519PublicKey.js';
 
 const router = express.Router();
 
@@ -9,26 +10,6 @@ const keysBodySchema = z.object({
   publicKey: z.string().min(1),
   privateKeyEnvelope: z.string().min(1).max(4000)
 });
-
-/**
- * X25519 public key in standard base64:
- * - alphabet A–Z a–z 0–9 + / with optional = padding
- * - encoded length multiple of 4
- * - decoded payload exactly 32 bytes
- * (Node Buffer.from(..., 'base64') does not throw on garbage — length/format checks are required.)
- */
-function isValidX25519PublicKeyBase64(value) {
-  const str = String(value);
-  if (!/^[A-Za-z0-9+/]+=*$/.test(str) || str.length % 4 !== 0) {
-    return false;
-  }
-  try {
-    const buf = Buffer.from(str, 'base64');
-    return buf.length === 32;
-  } catch {
-    return false;
-  }
-}
 
 /**
  * POST /api/user/keys
