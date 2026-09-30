@@ -1,12 +1,22 @@
 import { createApp } from './createApp.js';
 import { getCorsConfigSummary } from './middleware/cors.js';
 import { env, validateProductionEnv } from './utils/env.js';
+import { validateRequiredSecrets } from './utils/secretsValidation.js';
 import { getEmailFromSummary, isEmailDeliveryConfigured } from './utils/mailer.js';
 import { seedDemoData } from './lib/seed.js';
 import { purgeExpiredSessions } from './services/session.js';
 import { purgeExpiredExportJobs } from './services/exports.js';
 
 const PURGE_INTERVAL_MS = 60 * 60 * 1000;
+
+try {
+  validateRequiredSecrets();
+} catch (error) {
+  console.error(
+    error instanceof Error ? error.message : 'Required secrets validation failed'
+  );
+  process.exit(1);
+}
 
 const app = createApp();
 

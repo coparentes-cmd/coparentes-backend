@@ -5,7 +5,8 @@ export const TEST_ENCRYPTION_KEYS = {
   KEY_HEALTH: Buffer.alloc(32, 1).toString('base64'),
   KEY_FINANCE: Buffer.alloc(32, 2).toString('base64'),
   KEY_MESSAGES: Buffer.alloc(32, 3).toString('base64'),
-  KEY_GENERAL: Buffer.alloc(32, 4).toString('base64')
+  KEY_GENERAL: Buffer.alloc(32, 4).toString('base64'),
+  INTEGRITY_SECRET: Buffer.alloc(32, 5).toString('base64')
 };
 
 export function ensureTestEncryptionKeys() {

@@ -57,8 +57,6 @@ export const env = {
   trustedDeviceTtlDays: Number(process.env.TRUSTED_DEVICE_TTL_DAYS || 30)
 };
 
-const ENCRYPTION_KEY_NAMES = ['KEY_HEALTH', 'KEY_FINANCE', 'KEY_MESSAGES', 'KEY_GENERAL'];
-
 export function validateProductionEnv() {
   if (env.nodeEnv !== 'production') {
     return;
@@ -73,15 +71,7 @@ export function validateProductionEnv() {
     errors.push('SEED_DEMO_DATA must not be true in production');
   }
 
-  for (const keyName of ENCRYPTION_KEY_NAMES) {
-    if (!env.encryptionKeys[keyName]?.trim()) {
-      errors.push(`${keyName} is required in production`);
-    }
-  }
-
-  if (!env.integritySecret?.trim()) {
-    errors.push('INTEGRITY_SECRET is required in production');
-  }
+  // KEY_* + INTEGRITY_SECRET: validated in every env via validateRequiredSecrets()
 
   if (!env.resendApiKey?.trim() || !env.resendFromEmail?.trim()) {
     errors.push(

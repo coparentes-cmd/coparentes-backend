@@ -6,6 +6,8 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+import { validateRequiredSecrets } from '../src/utils/secretsValidation.js';
+
 const required = ['DATABASE_URL', 'FRONTEND_URL'];
 const recommended = [
   'CORS_ORIGINS',
@@ -18,8 +20,6 @@ const recommended = [
   'RESEND_FROM_EMAIL',
   'INVITE_EXPIRES_DAYS'
 ];
-
-const ENCRYPTION_KEY_NAMES = ['KEY_HEALTH', 'KEY_FINANCE', 'KEY_MESSAGES', 'KEY_GENERAL'];
 
 let failed = false;
 
@@ -40,19 +40,14 @@ for (const key of recommended) {
   }
 }
 
-for (const keyName of ENCRYPTION_KEY_NAMES) {
-  if (!process.env[keyName]?.trim()) {
-    if (process.env.NODE_ENV === 'production') {
-      console.error(`FAIL (production): ${keyName} is required`);
-      failed = true;
-    } else {
-      console.warn(
-        `WARN: ${keyName} is not set — encrypt/decrypt will throw (no INTEGRITY_SECRET/JWT fallback)`
-      );
-    }
-  } else {
-    console.log(`OK (encryption): ${keyName}`);
-  }
+try {
+  validateRequiredSecrets();
+  console.log('OK (secrets): KEY_HEALTH, KEY_FINANCE, KEY_MESSAGES, KEY_GENERAL, INTEGRITY_SECRET');
+} catch (error) {
+  console.error(
+    `FAIL (secrets):\n${error instanceof Error ? error.message : String(error)}`
+  );
+  failed = true;
 }
 
 if (process.env.NODE_ENV === 'production') {
@@ -82,11 +77,6 @@ if (process.env.NODE_ENV === 'production') {
 
   if (process.env.SEED_DEMO_DATA === 'true') {
     console.error('FAIL (production): SEED_DEMO_DATA must not be true');
-    failed = true;
-  }
-
-  if (!process.env.INTEGRITY_SECRET?.trim()) {
-    console.error('FAIL (production): INTEGRITY_SECRET is required');
     failed = true;
   }
 }
