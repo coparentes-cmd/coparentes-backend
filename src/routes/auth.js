@@ -22,6 +22,7 @@ import {
   logoutUser,
   registerUser,
   requestPasswordReset,
+  confirmPasswordReset,
   resendLoginOtp,
   updateUserProfile,
   verifyLoginOtp
@@ -98,6 +99,7 @@ const registerIpLimiter = rateLimit({
 });
 
 const forgotPasswordLimiterStore = new MemoryStore();
+const resetPasswordConfirmLimiterStore = new MemoryStore();
 
 /** Clears auth express-rate-limit MemoryStores (for tests only). */
 export async function resetAuthRateLimitersForTests() {
@@ -106,7 +108,8 @@ export async function resetAuthRateLimitersForTests() {
     loginIpLimiterStore.resetAll(),
     loginEmailLimiterStore.resetAll(),
     registerIpLimiterStore.resetAll(),
-    forgotPasswordLimiterStore.resetAll()
+    forgotPasswordLimiterStore.resetAll(),
+    resetPasswordConfirmLimiterStore.resetAll()
   ]);
 }
 
@@ -472,6 +475,54 @@ router.post(
         success: true,
         message: result.message
       });
+    } catch (error) {
+      if (error?.name === 'ZodError') {
+        return res.status(400).json({ error: 'invalid_request' });
+      }
+      return next(error);
+    }
+  }
+);
+
+const resetPasswordConfirmSchema = z.object({
+  token: z.string().min(1),
+  newPassword: z.string().min(PASSWORD_MIN_LENGTH)
+});
+
+// WARNING: default MemoryStore — per-process only (same as forgotPasswordLimiter).
+const resetPasswordConfirmLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 8,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, try again later' },
+  keyGenerator: (req) => {
+    const tokenHint =
+      typeof req.body?.token === 'string' && req.body.token.length > 0
+        ? req.body.token.slice(0, 16)
+        : '';
+    const ip = clientIp(req) || req.ip || 'unknown';
+    return tokenHint ? `reset-confirm:${tokenHint}` : `reset-confirm-ip:${ip}`;
+  },
+  store: resetPasswordConfirmLimiterStore
+});
+
+router.post(
+  '/reset-password/confirm',
+  resetPasswordConfirmLimiter,
+  async (req, res, next) => {
+    try {
+      const data = resetPasswordConfirmSchema.parse(req.body);
+      const result = await confirmPasswordReset({
+        token: data.token,
+        newPassword: data.newPassword
+      });
+
+      if (result.error) {
+        return res.status(result.status).json({ error: result.error });
+      }
+
+      return res.status(result.status).json({ success: true });
     } catch (error) {
       if (error?.name === 'ZodError') {
         return res.status(400).json({ error: 'invalid_request' });

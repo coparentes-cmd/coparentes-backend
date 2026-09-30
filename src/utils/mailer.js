@@ -208,18 +208,60 @@ export async function sendOtpEmail({ to, code }) {
   });
 }
 
-/** Last temp password when MAILER_STUB_SUCCESS=true (tests only). */
-let stubLastTempPassword = null;
+/** Last password-reset raw token when MAILER_STUB_SUCCESS=true (tests only). */
+let stubLastPasswordResetToken = null;
 
 /** @returns {string | null} */
-export function getStubLastTempPassword() {
-  return stubLastTempPassword;
+export function getStubLastPasswordResetToken() {
+  return stubLastPasswordResetToken;
 }
 
-export async function sendTempPasswordEmail({ to, tempPassword }) {
+export async function sendPasswordResetLinkEmail({ to, resetUrl }) {
   if (process.env.MAILER_STUB_SUCCESS === 'true') {
-    stubLastTempPassword = tempPassword;
+    try {
+      stubLastPasswordResetToken = new URL(resetUrl).searchParams.get('token');
+    } catch {
+      stubLastPasswordResetToken = null;
+    }
   }
+  const safeUrl = escapeHtml(resetUrl);
+  try {
+    return await dispatchEmail({
+      to,
+      subject: 'Reset hasła – Coparentes',
+      text:
+        `Otrzymaliśmy prośbę o reset hasła w Coparentes.\n\n` +
+        `Otwórz ten link (ważny 1 godzinę):\n${resetUrl}\n\n` +
+        `Jeśli to nie Ty, zignoruj tę wiadomość — hasło nie zostanie zmienione.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111111; max-width: 520px;">
+          <h2 style="color: #00C896; margin-bottom: 8px;">Coparentes</h2>
+          <p>Otrzymaliśmy prośbę o reset hasła.</p>
+          <p style="margin: 20px 0;">
+            <a href="${safeUrl}" style="display: inline-block; background: #00C896; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 8px; font-weight: 600;">Ustaw nowe hasło</a>
+          </p>
+          <p style="color: #5F6673; font-size: 13px;">Link jest ważny przez 1 godzinę. Jeśli to nie Ty, zignoruj tę wiadomość — hasło nie zostanie zmienione.</p>
+        </div>
+      `
+    });
+  } catch (error) {
+    console.error(
+      '[mailer] sendPasswordResetLinkEmail failed:',
+      error?.code || error?.message,
+      error?.details || ''
+    );
+    return {
+      skipped: true,
+      emailSent: false,
+      error: error?.code || 'email_send_failed',
+      details: error?.details || null,
+      message: error?.message || null
+    };
+  }
+}
+
+/** Kept for unit smoke tests of mail soft-fail; no longer used by auth reset flow. */
+export async function sendTempPasswordEmail({ to, tempPassword }) {
   const safePassword = escapeHtml(tempPassword);
   try {
     return await dispatchEmail({

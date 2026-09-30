@@ -1,5 +1,6 @@
 /**
- * After forgot-password, mustChangePassword stays true until POST /auth/password.
+ * Legacy mustChangePassword flag is no longer set by forgot-password
+ * (reset now uses a link token; password changes only on confirm).
  */
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,10 +17,8 @@ process.env.RESEND_FROM_EMAIL ??= 'Coparentes <noreply@test.coparentes.app>';
 import { createApp } from '../src/createApp.js';
 import { listen, request, dbReady } from './helpers/http.js';
 import { prisma } from '../src/lib/prisma.js';
-import { getStubLastTempPassword } from '../src/utils/mailer.js';
 
 const INITIAL_PASSWORD = 'Initial1!';
-const NEW_PASSWORD = 'Changed9!';
 
 const consents = {
   TERMS: true,
@@ -46,6 +45,9 @@ describe('mustChangePassword after forgot-password', { skip: !(await dbReady()) 
   after(async () => {
     server?.close();
     if (workspaceId) {
+      await prisma.passwordResetToken.deleteMany({
+        where: { user: { workspaceId } }
+      });
       await prisma.session.deleteMany({
         where: { user: { workspaceId } }
       });
@@ -58,7 +60,7 @@ describe('mustChangePassword after forgot-password', { skip: !(await dbReady()) 
     await prisma.$disconnect();
   });
 
-  it('forgot → login flag true → change password → session flag false', async () => {
+  it('forgot-password does not set mustChangePassword', async () => {
     const register = await request(server, 'POST', '/api/auth/register', {
       body: {
         name: 'Must Change User',
@@ -80,47 +82,14 @@ describe('mustChangePassword after forgot-password', { skip: !(await dbReady()) 
 
     const row = await prisma.user.findUnique({
       where: { email },
-      select: { mustChangePassword: true }
+      select: { mustChangePassword: true, passwordHash: true }
     });
-    assert.equal(row?.mustChangePassword, true);
-
-    const tempPassword = getStubLastTempPassword();
-    assert.ok(tempPassword && /^\d{12}$/.test(tempPassword), 'stub captured 12-digit temp password');
+    assert.equal(row?.mustChangePassword, false);
 
     const login = await request(server, 'POST', '/api/auth/login', {
-      body: { email, password: tempPassword }
+      body: { email, password: INITIAL_PASSWORD }
     });
     assert.equal(login.status, 200, JSON.stringify(login.json));
-    assert.equal(login.json.user.mustChangePassword, true);
-    const token = login.json.token;
-    assert.ok(token);
-
-    const change = await request(server, 'POST', '/api/auth/password', {
-      headers: { Authorization: `Bearer ${token}` },
-      body: {
-        currentPassword: tempPassword,
-        newPassword: NEW_PASSWORD
-      }
-    });
-    assert.equal(change.status, 200, JSON.stringify(change.json));
-
-    const afterChange = await prisma.user.findUnique({
-      where: { email },
-      select: { mustChangePassword: true }
-    });
-    assert.equal(afterChange?.mustChangePassword, false);
-
-    // changePassword invalidates sessions — login again with new password
-    const login2 = await request(server, 'POST', '/api/auth/login', {
-      body: { email, password: NEW_PASSWORD }
-    });
-    assert.equal(login2.status, 200, JSON.stringify(login2.json));
-    assert.equal(login2.json.user.mustChangePassword, false);
-
-    const session = await request(server, 'GET', '/api/auth/session', {
-      headers: { Authorization: `Bearer ${login2.json.token}` }
-    });
-    assert.equal(session.status, 200, JSON.stringify(session.json));
-    assert.equal(session.json.user.mustChangePassword, false);
+    assert.equal(login.json.user.mustChangePassword, false);
   });
 });

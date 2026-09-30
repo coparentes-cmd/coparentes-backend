@@ -25,12 +25,14 @@ import {
   saveRegistrationConsents,
   validateRequiredConsents
 } from './consent.service.js';
-import { sendTempPasswordEmail } from '../utils/mailer.js';
+import { sendPasswordResetLinkEmail } from '../utils/mailer.js';
 import {
   CRYPTO_KEYS,
   encryptOptional
 } from './crypto.service.js';
 import { isValidX25519PublicKeyBase64 } from '../utils/x25519PublicKey.js';
+import { createToken, hashPasswordResetToken } from '../utils/security.js';
+import { env } from '../utils/env.js';
 import crypto from 'node:crypto';
 
 function parseDateOfBirth(value) {
@@ -482,24 +484,10 @@ export async function changeUserPassword(
   return { success: true, status: 200 };
 }
 
-function generateTempPassword() {
-  // 12 digits only — safest for copy/paste from any mail client (incl. WP/Safari).
-  const bytes = crypto.randomBytes(12);
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 1) {
-    out += String(bytes[i] % 10);
-  }
-  if (/^0+$/.test(out)) {
-    out = `1${out.slice(1)}`;
-  }
-  return out;
-}
-
 /**
- * Issue a one-time temporary password by e-mail.
- * Always returns a generic success payload (no account enumeration).
- * Updates the hash first so a delivered mail always matches the DB.
- * Rolls back only on definite mail failure (not on provider timeout).
+ * Issue a one-time password-reset link by e-mail.
+ * Does not change passwordHash. Always returns a generic success payload
+ * when the account is missing (no account enumeration).
  */
 export async function requestPasswordReset(email) {
   const normalized = String(email || '').trim().toLowerCase();
@@ -510,25 +498,33 @@ export async function requestPasswordReset(email) {
   };
 
   const user = await prisma.user.findUnique({ where: { email: normalized } });
-  if (!user) {
+  if (!user || user.deletedAt != null) {
     return generic;
   }
 
-  const previousHash = user.passwordHash;
-  const previousMustChangePassword = user.mustChangePassword;
-  const tempPassword = generateTempPassword();
-  const passwordHash = await bcrypt.hash(tempPassword, 12);
+  const token = createToken();
+  const tokenHash = hashPasswordResetToken(token);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { passwordHash, mustChangePassword: true }
+  const created = await prisma.passwordResetToken.create({
+    data: {
+      tokenHash,
+      userId: user.id,
+      expiresAt
+    }
   });
-  await deleteAllSessionsForUser(user.id);
-  await invalidateUserSecurityArtifacts(user.id);
 
-  const emailResult = await sendTempPasswordEmail({
+  // Invalidate older unused reset links for this user (keep the one just created).
+  await prisma.passwordResetToken.deleteMany({
+    where: { userId: user.id, usedAt: null, id: { not: created.id } }
+  });
+
+  const base = String(env.frontendUrl || '').replace(/\/+$/, '');
+  const resetUrl = `${base}/reset-password?token=${encodeURIComponent(token)}`;
+
+  const emailResult = await sendPasswordResetLinkEmail({
     to: user.email,
-    tempPassword
+    resetUrl
   });
 
   if (emailResult.emailSent !== true) {
@@ -545,16 +541,7 @@ export async function requestPasswordReset(email) {
       user.id
     );
 
-    // Timeout: keep the new hash — Resend may still deliver. Other errors: restore.
-    if (code !== 'email_send_timeout') {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          passwordHash: previousHash,
-          mustChangePassword: previousMustChangePassword
-        }
-      });
-    }
+    await prisma.passwordResetToken.delete({ where: { id: created.id } }).catch(() => {});
 
     return {
       error:
@@ -569,6 +556,60 @@ export async function requestPasswordReset(email) {
   }
 
   return generic;
+}
+
+/**
+ * Consume a password-reset link token and set a new password.
+ * Token is claimed first via atomic updateMany (usedAt null → now) so only one
+ * concurrent confirm can win the race and change the password.
+ */
+export async function confirmPasswordReset({ token, newPassword }) {
+  const tokenHash = hashPasswordResetToken(String(token || ''));
+  const now = new Date();
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+
+  let userId;
+  try {
+    await prisma.$transaction(async (tx) => {
+      const updated = await tx.passwordResetToken.updateMany({
+        where: {
+          tokenHash,
+          usedAt: null,
+          expiresAt: { gt: now }
+        },
+        data: { usedAt: now }
+      });
+
+      if (updated.count === 0) {
+        const error = new Error('invalid_or_expired_token');
+        error.code = 'invalid_or_expired_token';
+        throw error;
+      }
+
+      const resetRow = await tx.passwordResetToken.findFirst({
+        where: { tokenHash }
+      });
+      userId = resetRow.userId;
+
+      await tx.user.update({
+        where: { id: resetRow.userId },
+        data: {
+          passwordHash,
+          mustChangePassword: false
+        }
+      });
+    });
+  } catch (error) {
+    // Same convention as issueLoginOtp: map known error.code → { error, status }.
+    if (error?.code === 'invalid_or_expired_token') {
+      return { error: 'invalid_or_expired_token', status: 400 };
+    }
+    throw error;
+  }
+
+  await deleteAllSessionsForUser(userId);
+
+  return { success: true, status: 200 };
 }
 
 /**

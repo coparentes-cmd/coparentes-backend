@@ -17,6 +17,14 @@ export function hashSessionToken(token) {
   return crypto.createHmac('sha256', sessionPepper()).update(token).digest('hex');
 }
 
+/** HMAC for password-reset link tokens — same pepper as sessions, distinct purpose prefix. */
+export function hashPasswordResetToken(token) {
+  return crypto
+    .createHmac('sha256', sessionPepper())
+    .update(`pwreset:${token}`)
+    .digest('hex');
+}
+
 export function createIntegrityHash(payload) {
   const data = JSON.stringify(payload);
   if (env.integritySecret) {

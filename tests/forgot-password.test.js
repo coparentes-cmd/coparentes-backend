@@ -45,7 +45,19 @@ describe('POST /api/auth/forgot-password', () => {
   });
 });
 
-describe('temp password email soft-fail', () => {
+describe('password reset email soft-fail', () => {
+  it('sendPasswordResetLinkEmail returns emailSent:false when Resend missing', async () => {
+    const { sendPasswordResetLinkEmail, isEmailDeliveryConfigured } = await import(
+      '../src/utils/mailer.js'
+    );
+    assert.equal(isEmailDeliveryConfigured(), false);
+    const result = await sendPasswordResetLinkEmail({
+      to: 'a@example.com',
+      resetUrl: 'http://localhost:8080/reset-password?token=abc'
+    });
+    assert.equal(result.emailSent, false);
+  });
+
   it('sendTempPasswordEmail returns emailSent:false when Resend missing', async () => {
     const { sendTempPasswordEmail, isEmailDeliveryConfigured } = await import(
       '../src/utils/mailer.js'

@@ -167,6 +167,7 @@ model User {
   updatedAt        DateTime  @updatedAt
 
   sessions         Session[]
+  passwordResetTokens PasswordResetToken[]
   sentEmailInvites EmailInvite[] @relation("SentEmailInvites")
   loginOtpChallenges LoginOtpChallenge[]
   trustedDevices   TrustedDevice[]
@@ -258,6 +259,20 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   expiresAt DateTime
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// One-time password-reset link token (hashed at rest; raw token only in e-mail).
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  tokenHash String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime  @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
 
   @@index([userId])
   @@index([expiresAt])
