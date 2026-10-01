@@ -153,6 +153,9 @@ model User {
   publicKey        String?
   /// Nieprzezroczysty blob klienta: zaszyfrowany klucz prywatny E2E (sól/KDF/nonce/ciphertext). Backend nie interpretuje.
   privateKeyEnvelope String?
+  /// Nieprzezroczysty blob klienta: klucz prywatny E2E zaszyfrowany kodem odzyskiwania
+  /// (osobna koperta niż privateKeyEnvelope, inny sekret otwiera ten sam klucz).
+  recoveryKeyEnvelope String?
   role             UserRole  @default(parentA)
   twoFactorEnabled Boolean   @default(false)
   highConflictMode Boolean   @default(false)

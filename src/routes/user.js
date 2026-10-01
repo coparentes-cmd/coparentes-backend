@@ -5,6 +5,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
 import { isValidX25519PublicKeyBase64 } from '../utils/x25519PublicKey.js';
 import { PASSWORD_MIN_LENGTH } from '../utils/passwordPolicy.js';
+import { sendRecoveryCodeEmail } from '../utils/mailer.js';
 
 const router = express.Router();
 
@@ -14,6 +15,11 @@ const keysBodySchema = z.object({
   // Optional: when set, verify identity via bcrypt before overwriting keys
   // (orphaned-envelope recovery). Omitted by initial setupNewKeys.
   currentPassword: z.string().min(PASSWORD_MIN_LENGTH).optional()
+});
+
+const recoveryKeyBodySchema = z.object({
+  recoveryKeyEnvelope: z.string().min(1).max(4000),
+  recoveryCode: z.string().min(8).max(64)
 });
 
 /**
@@ -81,21 +87,100 @@ router.post('/keys', requireAuth, async (req, res, next) => {
 
 /**
  * GET /api/user/keys/mine
- * Return the authenticated user's own publicKey + privateKeyEnvelope.
- * This is the ONLY endpoint that ever returns privateKeyEnvelope.
+ * Return the authenticated user's own publicKey + privateKeyEnvelope
+ * (+ recoveryKeyEnvelope when present). Never returns the recovery code itself.
  */
 router.get('/keys/mine', requireAuth, async (req, res, next) => {
   try {
     const me = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { publicKey: true, privateKeyEnvelope: true }
+      select: {
+        publicKey: true,
+        privateKeyEnvelope: true,
+        recoveryKeyEnvelope: true
+      }
     });
 
     return res.status(200).json({
       publicKey: me?.publicKey ?? null,
-      privateKeyEnvelope: me?.privateKeyEnvelope ?? null
+      privateKeyEnvelope: me?.privateKeyEnvelope ?? null,
+      recoveryKeyEnvelope: me?.recoveryKeyEnvelope ?? null
     });
   } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * POST /api/user/recovery-key
+ * Store opaque recoveryKeyEnvelope and e-mail the plaintext recovery code.
+ * On non-timeout mail failure, roll back recoveryKeyEnvelope to previous value.
+ * On email_send_timeout, keep the new envelope and return 503 (client may retry mail-only later).
+ */
+router.post('/recovery-key', requireAuth, async (req, res, next) => {
+  try {
+    const data = recoveryKeyBodySchema.parse(req.body);
+
+    const existing = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { email: true, recoveryKeyEnvelope: true }
+    });
+
+    if (!existing?.email) {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+
+    const previousEnvelope = existing.recoveryKeyEnvelope ?? null;
+
+    await prisma.user.update({
+      where: { id: req.user.id },
+      data: { recoveryKeyEnvelope: data.recoveryKeyEnvelope }
+    });
+
+    const emailResult = await sendRecoveryCodeEmail({
+      to: existing.email,
+      recoveryCode: data.recoveryCode
+    });
+
+    if (emailResult.emailSent !== true) {
+      const code = emailResult.error || 'otp_email_failed';
+      const providerMessage =
+        emailResult.details?.message || emailResult.message || null;
+
+      console.error(
+        '[e2e] recovery-key e-mail failed:',
+        code,
+        providerMessage,
+        'userId=',
+        req.user.id
+      );
+
+      // Timeout: envelope already saved — do not roll back (client may have the code).
+      if (code !== 'email_send_timeout') {
+        await prisma.user
+          .update({
+            where: { id: req.user.id },
+            data: { recoveryKeyEnvelope: previousEnvelope }
+          })
+          .catch(() => {});
+      }
+
+      return res.status(503).json({
+        error:
+          code === 'email_not_configured' || code === 'email_send_timeout'
+            ? code
+            : 'otp_email_failed',
+        ...(providerMessage
+          ? { reason: String(providerMessage).slice(0, 240) }
+          : {})
+      });
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
     return next(error);
   }
 });

@@ -260,6 +260,55 @@ export async function sendPasswordResetLinkEmail({ to, resetUrl }) {
   }
 }
 
+/** Last recovery code when MAILER_STUB_SUCCESS=true (tests only). */
+let stubLastRecoveryCode = null;
+
+/** @returns {string | null} */
+export function getStubLastRecoveryCode() {
+  return stubLastRecoveryCode;
+}
+
+export async function sendRecoveryCodeEmail({ to, recoveryCode }) {
+  if (process.env.MAILER_STUB_SUCCESS === 'true') {
+    stubLastRecoveryCode = recoveryCode != null ? String(recoveryCode) : null;
+  }
+  const safeCode = escapeHtml(recoveryCode);
+  try {
+    return await dispatchEmail({
+      to,
+      subject: 'Kod odzyskiwania czatu – Coparentes',
+      text:
+        `Twój kod odzyskiwania historii czatu Coparentes:\n\n` +
+        `${recoveryCode}\n\n` +
+        `Zachowaj ten kod w bezpiecznym miejscu i nie przekazuj go nikomu — ` +
+        `pozwoli odzyskać historię czatu, jeśli zapomnisz hasła.\n\n` +
+        `Jeśli to nie Ty, zignoruj tę wiadomość.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111111; max-width: 520px;">
+          <h2 style="color: #00C896; margin-bottom: 8px;">Coparentes</h2>
+          <p>Twój kod odzyskiwania historii czatu:</p>
+          <p style="font-size: 28px; font-weight: 700; letter-spacing: 4px; margin: 16px 0; color: #111111; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;">${safeCode}</p>
+          <p style="color: #B45309; font-size: 14px;"><strong>Zachowaj ten kod w bezpiecznym miejscu</strong> i nie przekazuj go nikomu — pozwoli odzyskać historię czatu, jeśli zapomnisz hasła.</p>
+          <p style="color: #5F6673; font-size: 13px;">Jeśli to nie Ty, zignoruj tę wiadomość.</p>
+        </div>
+      `
+    });
+  } catch (error) {
+    console.error(
+      '[mailer] sendRecoveryCodeEmail failed:',
+      error?.code || error?.message,
+      error?.details || ''
+    );
+    return {
+      skipped: true,
+      emailSent: false,
+      error: error?.code || 'email_send_failed',
+      details: error?.details || null,
+      message: error?.message || null
+    };
+  }
+}
+
 /** Kept for unit smoke tests of mail soft-fail; no longer used by auth reset flow. */
 export async function sendTempPasswordEmail({ to, tempPassword }) {
   const safePassword = escapeHtml(tempPassword);
