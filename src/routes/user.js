@@ -1,20 +1,28 @@
 import express from 'express';
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 import { requireAuth } from '../middleware/auth.js';
 import { prisma } from '../lib/prisma.js';
 import { isValidX25519PublicKeyBase64 } from '../utils/x25519PublicKey.js';
+import { PASSWORD_MIN_LENGTH } from '../utils/passwordPolicy.js';
 
 const router = express.Router();
 
 const keysBodySchema = z.object({
   publicKey: z.string().min(1),
-  privateKeyEnvelope: z.string().min(1).max(4000)
+  privateKeyEnvelope: z.string().min(1).max(4000),
+  // Optional: when set, verify identity via bcrypt before overwriting keys
+  // (orphaned-envelope recovery). Omitted by initial setupNewKeys.
+  currentPassword: z.string().min(PASSWORD_MIN_LENGTH).optional()
 });
 
 /**
  * POST /api/user/keys
  * Upload / replace the current user's X25519 public key + opaque private-key envelope (E2E).
  * Backend never interprets privateKeyEnvelope internals.
+ *
+ * Optional `currentPassword`: when present, must match passwordHash (401 otherwise).
+ * When omitted, behaviour is unchanged (auth session alone is enough) for bootstrap.
  */
 router.post('/keys', requireAuth, async (req, res, next) => {
   try {
@@ -26,8 +34,21 @@ router.post('/keys', requireAuth, async (req, res, next) => {
 
     const existing = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { publicKey: true, privateKeyEnvelope: true }
+      select: {
+        publicKey: true,
+        privateKeyEnvelope: true,
+        passwordHash: true
+      }
     });
+
+    if (data.currentPassword) {
+      if (
+        !existing?.passwordHash ||
+        !(await bcrypt.compare(data.currentPassword, existing.passwordHash))
+      ) {
+        return res.status(401).json({ error: 'invalid_credentials' });
+      }
+    }
 
     if (existing?.publicKey || existing?.privateKeyEnvelope) {
       // Overwrite allowed (new device / key loss / post-reset). Old ThreadKey rows for this user
