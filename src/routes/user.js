@@ -1,4 +1,5 @@
 import express from 'express';
+import rateLimit, { MemoryStore } from 'express-rate-limit';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
 import { requireAuth } from '../middleware/auth.js';
@@ -8,6 +9,52 @@ import { PASSWORD_MIN_LENGTH } from '../utils/passwordPolicy.js';
 import { sendRecoveryCodeEmail } from '../utils/mailer.js';
 
 const router = express.Router();
+
+const RATE_LIMIT_MESSAGE = { error: 'Too many requests, try again later' };
+
+// WARNING: express-rate-limit MemoryStore — per-process only (same as auth.js).
+const keysWithPasswordLimiterStore = new MemoryStore();
+/**
+ * R5: bcrypt gate on optional currentPassword — count only when password is sent.
+ * `skip: true` bypasses entirely (no increment) — see express-rate-limit source.
+ * Keyed per authenticated userId (requireAuth runs first).
+ */
+const keysWithPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: RATE_LIMIT_MESSAGE,
+  keyGenerator: (req) => `user-keys-pw:${req.user?.id || 'unknown'}`,
+  skip: (req) => {
+    const pw = req.body?.currentPassword;
+    return typeof pw !== 'string' || pw.length === 0;
+  },
+  store: keysWithPasswordLimiterStore
+});
+
+const recoveryKeyLimiterStore = new MemoryStore();
+/**
+ * R5: every call may send e-mail + overwrite recoveryKeyEnvelope.
+ * Keyed per authenticated userId (requireAuth runs first).
+ */
+const recoveryKeyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: RATE_LIMIT_MESSAGE,
+  keyGenerator: (req) => `user-recovery-key:${req.user?.id || 'unknown'}`,
+  store: recoveryKeyLimiterStore
+});
+
+/** Clears user-route express-rate-limit MemoryStores (for tests only). */
+export async function resetUserRateLimitersForTests() {
+  await Promise.all([
+    keysWithPasswordLimiterStore.resetAll(),
+    recoveryKeyLimiterStore.resetAll()
+  ]);
+}
 
 const keysBodySchema = z.object({
   publicKey: z.string().min(1),
@@ -29,8 +76,11 @@ const recoveryKeyBodySchema = z.object({
  *
  * Optional `currentPassword`: when present, must match passwordHash (401 otherwise).
  * When omitted, behaviour is unchanged (auth session alone is enough) for bootstrap.
+ *
+ * Rate limit (R5): 5 / 15 min per userId — only requests that include currentPassword
+ * (bcrypt surface). Bootstrap without password is skipped by the limiter.
  */
-router.post('/keys', requireAuth, async (req, res, next) => {
+router.post('/keys', requireAuth, keysWithPasswordLimiter, async (req, res, next) => {
   try {
     const data = keysBodySchema.parse(req.body);
 
@@ -116,8 +166,10 @@ router.get('/keys/mine', requireAuth, async (req, res, next) => {
  * Store opaque recoveryKeyEnvelope and e-mail the plaintext recovery code.
  * On non-timeout mail failure, roll back recoveryKeyEnvelope to previous value.
  * On email_send_timeout, keep the new envelope and return 503 (client may retry mail-only later).
+ *
+ * Rate limit (R5): 5 / 15 min per userId (e-mail + envelope overwrite abuse).
  */
-router.post('/recovery-key', requireAuth, async (req, res, next) => {
+router.post('/recovery-key', requireAuth, recoveryKeyLimiter, async (req, res, next) => {
   try {
     const data = recoveryKeyBodySchema.parse(req.body);
 
