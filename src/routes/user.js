@@ -7,6 +7,10 @@ import { prisma } from '../lib/prisma.js';
 import { isValidX25519PublicKeyBase64 } from '../utils/x25519PublicKey.js';
 import { PASSWORD_MIN_LENGTH } from '../utils/passwordPolicy.js';
 import { sendRecoveryCodeEmail } from '../utils/mailer.js';
+import {
+  CRYPTO_KEYS,
+  decryptOptionalSafe
+} from '../services/crypto.service.js';
 
 const router = express.Router();
 
@@ -167,6 +171,9 @@ router.get('/keys/mine', requireAuth, async (req, res, next) => {
  * On non-timeout mail failure, roll back recoveryKeyEnvelope to previous value.
  * On email_send_timeout, keep the new envelope and return 503 (client may retry mail-only later).
  *
+ * Child accounts: e-mail goes to parentA/parentB in the same workspace (not the
+ * synthetic child@accounts.coparentes.internal address).
+ *
  * Rate limit (R5): 5 / 15 min per userId (e-mail + envelope overwrite abuse).
  */
 router.post('/recovery-key', requireAuth, recoveryKeyLimiter, async (req, res, next) => {
@@ -175,11 +182,46 @@ router.post('/recovery-key', requireAuth, recoveryKeyLimiter, async (req, res, n
 
     const existing = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { email: true, recoveryKeyEnvelope: true }
+      select: {
+        email: true,
+        recoveryKeyEnvelope: true,
+        role: true,
+        workspaceId: true,
+        name: true
+      }
     });
 
     if (!existing?.email) {
       return res.status(400).json({ error: 'invalid_request' });
+    }
+
+    /** @type {string | string[]} */
+    let mailTo = existing.email;
+    /** @type {string | null} */
+    let childName = null;
+
+    if (existing.role === 'child') {
+      if (!existing.workspaceId) {
+        return res.status(400).json({ error: 'no_recovery_contact' });
+      }
+      const parents = await prisma.user.findMany({
+        where: {
+          workspaceId: existing.workspaceId,
+          role: { in: ['parentA', 'parentB'] },
+          deletedAt: null
+        },
+        select: { email: true }
+      });
+      const parentEmails = parents
+        .map((p) => p.email)
+        .filter((e) => typeof e === 'string' && e.length > 0);
+      if (parentEmails.length === 0) {
+        return res.status(400).json({ error: 'no_recovery_contact' });
+      }
+      mailTo = parentEmails;
+      childName =
+        decryptOptionalSafe(existing.name, CRYPTO_KEYS.KEY_GENERAL, '') ||
+        'dziecko';
     }
 
     const previousEnvelope = existing.recoveryKeyEnvelope ?? null;
@@ -190,8 +232,9 @@ router.post('/recovery-key', requireAuth, recoveryKeyLimiter, async (req, res, n
     });
 
     const emailResult = await sendRecoveryCodeEmail({
-      to: existing.email,
-      recoveryCode: data.recoveryCode
+      to: mailTo,
+      recoveryCode: data.recoveryCode,
+      childName
     });
 
     if (emailResult.emailSent !== true) {

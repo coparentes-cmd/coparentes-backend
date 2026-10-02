@@ -263,21 +263,53 @@ export async function sendPasswordResetLinkEmail({ to, resetUrl }) {
 /** Last recovery code when MAILER_STUB_SUCCESS=true (tests only). */
 let stubLastRecoveryCode = null;
 
+/** @type {string[] | null} */
+let stubLastRecoveryRecipients = null;
+
 /** @returns {string | null} */
 export function getStubLastRecoveryCode() {
   return stubLastRecoveryCode;
 }
 
-export async function sendRecoveryCodeEmail({ to, recoveryCode }) {
+/** @returns {string[] | null} last `to` list passed to sendRecoveryCodeEmail under stub */
+export function getStubLastRecoveryRecipients() {
+  return stubLastRecoveryRecipients == null
+    ? null
+    : [...stubLastRecoveryRecipients];
+}
+
+export async function sendRecoveryCodeEmail({
+  to,
+  recoveryCode,
+  childName = null
+}) {
+  const recipients = Array.isArray(to) ? [...to] : [to];
   if (process.env.MAILER_STUB_SUCCESS === 'true') {
     stubLastRecoveryCode = recoveryCode != null ? String(recoveryCode) : null;
+    stubLastRecoveryRecipients = recipients.map((r) => String(r));
   }
   const safeCode = escapeHtml(recoveryCode);
+  const forChild = typeof childName === 'string' && childName.trim().length > 0;
+  const trimmedChild = forChild ? childName.trim() : '';
+  const safeChild = forChild ? escapeHtml(trimmedChild) : '';
+
+  const subject = forChild
+    ? `Kod odzyskiwania czatu - konto: ${trimmedChild} - Coparentes`
+    : 'Kod odzyskiwania czatu – Coparentes';
+
+  const contextLine = forChild
+    ? `To jest kod odzyskiwania dla konta dziecka: ${trimmedChild}. Oboje rodzice otrzymują tę wiadomość.\n\n`
+    : '';
+  const contextHtml = forChild
+    ? `<p>To jest kod odzyskiwania dla konta dziecka: <strong>${safeChild}</strong>. Oboje rodzice otrzymują tę wiadomość.</p>`
+    : '';
+
   try {
     return await dispatchEmail({
-      to,
-      subject: 'Kod odzyskiwania czatu – Coparentes',
+      to: recipients,
+      subject,
       text:
+        contextLine +
         `Twój kod odzyskiwania historii czatu Coparentes:\n\n` +
         `${recoveryCode}\n\n` +
         `Zachowaj ten kod w bezpiecznym miejscu i nie przekazuj go nikomu — ` +
@@ -286,6 +318,7 @@ export async function sendRecoveryCodeEmail({ to, recoveryCode }) {
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111111; max-width: 520px;">
           <h2 style="color: #00C896; margin-bottom: 8px;">Coparentes</h2>
+          ${contextHtml}
           <p>Twój kod odzyskiwania historii czatu:</p>
           <p style="font-size: 28px; font-weight: 700; letter-spacing: 4px; margin: 16px 0; color: #111111; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;">${safeCode}</p>
           <p style="color: #B45309; font-size: 14px;"><strong>Zachowaj ten kod w bezpiecznym miejscu</strong> i nie przekazuj go nikomu — pozwoli odzyskać historię czatu, jeśli zapomnisz hasła.</p>
