@@ -63,6 +63,22 @@ export async function listParentUserIds(workspaceId, client = prisma) {
   return parents.map((row) => row.id);
 }
 
+/** Current active parentA/parentB e-mail addresses in a workspace (0–2). */
+export async function listParentEmails(workspaceId, client = prisma) {
+  const parents = await client.user.findMany({
+    where: {
+      workspaceId,
+      role: { in: ['parentA', 'parentB'] },
+      deletedAt: null
+    },
+    select: { email: true },
+    orderBy: { createdAt: 'asc' }
+  });
+  return parents
+    .map((p) => p.email)
+    .filter((e) => typeof e === 'string' && e.length > 0);
+}
+
 export async function createWorkspace({ name, client = prisma }) {
   let inviteCode = createInviteCode();
   let childInviteCode = createInviteCode();

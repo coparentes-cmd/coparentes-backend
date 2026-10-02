@@ -216,27 +216,66 @@ export function getStubLastPasswordResetToken() {
   return stubLastPasswordResetToken;
 }
 
-export async function sendPasswordResetLinkEmail({ to, resetUrl }) {
+/** @type {string[] | null} */
+let stubLastPasswordResetRecipients = null;
+
+/** @returns {string[] | null} last `to` list under stub (tests) */
+export function getStubLastPasswordResetRecipients() {
+  return stubLastPasswordResetRecipients == null
+    ? null
+    : [...stubLastPasswordResetRecipients];
+}
+
+export async function sendPasswordResetLinkEmail({
+  to,
+  resetUrl,
+  childName = null
+}) {
+  const recipients = Array.isArray(to) ? [...to] : [to];
   if (process.env.MAILER_STUB_SUCCESS === 'true') {
     try {
       stubLastPasswordResetToken = new URL(resetUrl).searchParams.get('token');
     } catch {
       stubLastPasswordResetToken = null;
     }
+    stubLastPasswordResetRecipients = recipients.map((r) => String(r));
   }
   const safeUrl = escapeHtml(resetUrl);
+  const forChild = typeof childName === 'string' && childName.trim().length > 0;
+  const trimmedChild = forChild ? childName.trim() : '';
+  const safeChild = forChild ? escapeHtml(trimmedChild) : '';
+
+  const subject = forChild
+    ? `Reset hasła - konto: ${trimmedChild} - Coparentes`
+    : 'Reset hasła – Coparentes';
+
+  const contextLine = forChild
+    ? `To jest reset hasła dla konta dziecka: ${trimmedChild}. Oboje rodzice otrzymują tę wiadomość.\n\n`
+    : '';
+  const contextHtml = forChild
+    ? `<p>To jest reset hasła dla konta dziecka: <strong>${safeChild}</strong>. Oboje rodzice otrzymują tę wiadomość.</p>`
+    : '';
+  const introLine = forChild
+    ? ''
+    : 'Otrzymaliśmy prośbę o reset hasła w Coparentes.\n\n';
+  const introHtml = forChild
+    ? ''
+    : '<p>Otrzymaliśmy prośbę o reset hasła.</p>';
+
   try {
     return await dispatchEmail({
-      to,
-      subject: 'Reset hasła – Coparentes',
+      to: recipients,
+      subject,
       text:
-        `Otrzymaliśmy prośbę o reset hasła w Coparentes.\n\n` +
+        contextLine +
+        introLine +
         `Otwórz ten link (ważny 1 godzinę):\n${resetUrl}\n\n` +
         `Jeśli to nie Ty, zignoruj tę wiadomość — hasło nie zostanie zmienione.`,
       html: `
         <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111111; max-width: 520px;">
           <h2 style="color: #00C896; margin-bottom: 8px;">Coparentes</h2>
-          <p>Otrzymaliśmy prośbę o reset hasła.</p>
+          ${contextHtml}
+          ${introHtml}
           <p style="margin: 20px 0;">
             <a href="${safeUrl}" style="display: inline-block; background: #00C896; color: #ffffff; text-decoration: none; padding: 12px 20px; border-radius: 8px; font-weight: 600;">Ustaw nowe hasło</a>
           </p>

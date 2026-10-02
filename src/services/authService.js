@@ -6,7 +6,8 @@ import {
   findWorkspaceByChildInviteCode,
   findWorkspaceByInviteCode,
   assertParentInviteJoinAllowed,
-  getChildJoinPreview
+  getChildJoinPreview,
+  listParentEmails
 } from './workspace.js';
 import { createSessionForUser, deleteAllSessionsForUser, deleteSession } from './session.js';
 import {
@@ -28,6 +29,7 @@ import {
 import { sendPasswordResetLinkEmail } from '../utils/mailer.js';
 import {
   CRYPTO_KEYS,
+  decryptOptionalSafe,
   encryptOptional
 } from './crypto.service.js';
 import { isValidX25519PublicKeyBase64 } from '../utils/x25519PublicKey.js';
@@ -556,6 +558,96 @@ export async function requestPasswordReset(email) {
   }
 
   return generic;
+}
+
+/**
+ * Parent-initiated login-password reset for a child account in the same workspace.
+ * Token is bound to the child user; e-mail goes to parentA/parentB (not the
+ * synthetic child@accounts.coparentes.internal address).
+ *
+ * Authenticated action — returns explicit errors (no anti-enumeration blur).
+ */
+export async function requestChildPasswordReset({ childUserId, workspaceId }) {
+  const child = await prisma.user.findFirst({
+    where: {
+      id: childUserId,
+      workspaceId,
+      role: 'child',
+      deletedAt: null
+    },
+    select: {
+      id: true,
+      name: true,
+      workspaceId: true
+    }
+  });
+
+  if (!child) {
+    return { error: 'child_not_found', status: 404 };
+  }
+
+  const parentEmails = await listParentEmails(workspaceId);
+  if (parentEmails.length === 0) {
+    return { error: 'no_recovery_contact', status: 400 };
+  }
+
+  const childName =
+    decryptOptionalSafe(child.name, CRYPTO_KEYS.KEY_GENERAL, '') || 'dziecko';
+
+  const token = createToken();
+  const tokenHash = hashPasswordResetToken(token);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  const created = await prisma.passwordResetToken.create({
+    data: {
+      tokenHash,
+      userId: child.id,
+      expiresAt
+    }
+  });
+
+  await prisma.passwordResetToken.deleteMany({
+    where: { userId: child.id, usedAt: null, id: { not: created.id } }
+  });
+
+  const base = String(env.frontendUrl || '').replace(/\/+$/, '');
+  const resetUrl = `${base}/reset-password?token=${encodeURIComponent(token)}`;
+
+  const emailResult = await sendPasswordResetLinkEmail({
+    to: parentEmails,
+    resetUrl,
+    childName
+  });
+
+  if (emailResult.emailSent !== true) {
+    const code = emailResult.error || 'otp_email_failed';
+    const providerMessage =
+      emailResult.details?.message || emailResult.message || null;
+    console.error(
+      '[auth] child password reset e-mail failed:',
+      code,
+      providerMessage,
+      'childUserId=',
+      child.id
+    );
+
+    await prisma.passwordResetToken
+      .delete({ where: { id: created.id } })
+      .catch(() => {});
+
+    return {
+      error:
+        code === 'email_not_configured' || code === 'email_send_timeout'
+          ? code
+          : 'otp_email_failed',
+      status: 503,
+      reason: providerMessage
+        ? String(providerMessage).slice(0, 240)
+        : undefined
+    };
+  }
+
+  return { success: true, status: 200 };
 }
 
 /**

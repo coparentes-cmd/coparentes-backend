@@ -11,6 +11,7 @@ import {
   CRYPTO_KEYS,
   decryptOptionalSafe
 } from '../services/crypto.service.js';
+import { listParentEmails } from '../services/workspace.js';
 
 const router = express.Router();
 
@@ -204,17 +205,7 @@ router.post('/recovery-key', requireAuth, recoveryKeyLimiter, async (req, res, n
       if (!existing.workspaceId) {
         return res.status(400).json({ error: 'no_recovery_contact' });
       }
-      const parents = await prisma.user.findMany({
-        where: {
-          workspaceId: existing.workspaceId,
-          role: { in: ['parentA', 'parentB'] },
-          deletedAt: null
-        },
-        select: { email: true }
-      });
-      const parentEmails = parents
-        .map((p) => p.email)
-        .filter((e) => typeof e === 'string' && e.length > 0);
+      const parentEmails = await listParentEmails(existing.workspaceId);
       if (parentEmails.length === 0) {
         return res.status(400).json({ error: 'no_recovery_contact' });
       }

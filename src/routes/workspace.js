@@ -1,9 +1,42 @@
 import express from 'express';
+import rateLimit, { MemoryStore } from 'express-rate-limit';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
+import { requireParentRole } from '../middleware/rbac.js';
 import { createChild, getWorkspaceGraph } from '../services/workspace.js';
+import { requestChildPasswordReset } from '../services/authService.js';
+import { prisma } from '../lib/prisma.js';
+import { entityIdSchema } from '../utils/ids.js';
 
 const router = express.Router();
+
+const RATE_LIMIT_MESSAGE = { error: 'Too many requests, try again later' };
+
+// WARNING: express-rate-limit MemoryStore — per-process only (same as user.js).
+const childPasswordResetLimiterStore = new MemoryStore();
+/**
+ * Parent-triggered child login-password reset (sends e-mail to parents).
+ * 5 / 15 min per authenticated parent userId.
+ */
+const childPasswordResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: RATE_LIMIT_MESSAGE,
+  keyGenerator: (req) =>
+    `workspace-child-password-reset:${req.user?.id || 'unknown'}`,
+  store: childPasswordResetLimiterStore
+});
+
+/** Clears workspace-route rate-limit MemoryStores (for tests only). */
+export async function resetWorkspaceRateLimitersForTests() {
+  await childPasswordResetLimiterStore.resetAll();
+}
+
+const childUserIdParamSchema = z.object({
+  childUserId: entityIdSchema
+});
 
 router.get('/current', requireAuth, async (req, res, next) => {
   try {
@@ -54,5 +87,63 @@ router.post('/children', requireAuth, async (req, res, next) => {
     return next(error);
   }
 });
+
+/**
+ * POST /api/workspace/children/:childUserId/reset-password
+ * ParentA/parentB: send a login-password reset link for a child account in
+ * this workspace. E-mail goes to both parents (not the synthetic child address).
+ *
+ * Rate limit: 5 / 15 min per parent userId.
+ */
+router.post(
+  '/children/:childUserId/reset-password',
+  requireAuth,
+  requireParentRole,
+  childPasswordResetLimiter,
+  async (req, res, next) => {
+    try {
+      const { childUserId } = childUserIdParamSchema.parse(req.params);
+      const workspaceId = req.user.workspaceId;
+
+      if (!workspaceId) {
+        return res.status(400).json({ error: 'invalid_request' });
+      }
+
+      // Defense in depth: child must already belong to caller's workspace
+      // before we even hit the service (service also filters by workspaceId).
+      const inWorkspace = await prisma.user.findFirst({
+        where: {
+          id: childUserId,
+          workspaceId,
+          role: 'child',
+          deletedAt: null
+        },
+        select: { id: true }
+      });
+      if (!inWorkspace) {
+        return res.status(404).json({ error: 'child_not_found' });
+      }
+
+      const result = await requestChildPasswordReset({
+        childUserId,
+        workspaceId
+      });
+
+      if (result.error) {
+        return res.status(result.status || 400).json({
+          error: result.error,
+          ...(result.reason ? { reason: result.reason } : {})
+        });
+      }
+
+      return res.status(200).json({ success: true });
+    } catch (error) {
+      if (error?.name === 'ZodError') {
+        return res.status(400).json({ error: 'invalid_request' });
+      }
+      return next(error);
+    }
+  }
+);
 
 export default router;
