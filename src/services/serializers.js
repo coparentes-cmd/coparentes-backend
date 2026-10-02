@@ -34,7 +34,9 @@ export function serializeChild(child) {
     id: child.id,
     name: decryptOptionalSafe(child.name, CRYPTO_KEYS.KEY_GENERAL, 'Dziecko'),
     dateOfBirth: child.dateOfBirth.toISOString(),
-    school: decryptOptionalSafe(child.school, CRYPTO_KEYS.KEY_GENERAL, '')
+    school: decryptOptionalSafe(child.school, CRYPTO_KEYS.KEY_GENERAL, ''),
+    // Additive: User.id of the linked child login account, or null if not joined yet.
+    linkedAccountId: child.linkedAccount?.id ?? null
   };
 }
 

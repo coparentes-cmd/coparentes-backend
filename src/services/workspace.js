@@ -191,7 +191,12 @@ export async function getWorkspaceGraph(workspaceId) {
         where: { deletedAt: null },
         orderBy: { createdAt: 'asc' }
       },
-      children: { orderBy: { name: 'asc' } }
+      children: {
+        orderBy: { name: 'asc' },
+        include: {
+          linkedAccount: { select: { id: true } }
+        }
+      }
     }
   });
 
@@ -209,7 +214,12 @@ export async function getWorkspaceGraph(workspaceId) {
           where: { deletedAt: null },
           orderBy: { createdAt: 'asc' }
         },
-        children: { orderBy: { name: 'asc' } }
+        children: {
+          orderBy: { name: 'asc' },
+          include: {
+            linkedAccount: { select: { id: true } }
+          }
+        }
       }
     });
   }
