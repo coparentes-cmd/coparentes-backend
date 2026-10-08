@@ -20,14 +20,12 @@ export function maskEmail(email) {
   return `${local[0]}***${local[local.length - 1]}@${domain}`;
 }
 
-export function requiresEmailOtp(user) {
-  if (!env.otpEnabled || !env.resendApiKey || !env.resendFromEmail) {
-    return false;
-  }
-  if (!user?.twoFactorEnabled) {
-    return false;
-  }
-  return !String(user.email).endsWith('@accounts.coparentes.internal');
+/**
+ * Login email OTP / 2FA product path is retired.
+ * Keep helpers + DB tables; never interrupt password login.
+ */
+export function requiresEmailOtp(_user) {
+  return false;
 }
 
 export async function purgeOtpChallengesForUser(userId) {

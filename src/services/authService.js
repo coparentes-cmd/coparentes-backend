@@ -399,8 +399,9 @@ export async function updateUserProfile(userId, sessionToken, data) {
   if (data.highConflictMode !== undefined) {
     updates.highConflictMode = data.highConflictMode;
   }
+  // 2FA / login OTP retired — ignore client toggles; keep column for compatibility.
   if (data.twoFactorEnabled !== undefined) {
-    updates.twoFactorEnabled = data.twoFactorEnabled;
+    updates.twoFactorEnabled = false;
   }
   if (data.themeMode !== undefined) {
     updates.themeMode = data.themeMode;

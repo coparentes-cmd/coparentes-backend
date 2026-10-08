@@ -112,7 +112,7 @@ export async function seedDemoData(options = {}) {
       email: 'anna@coparentes.app',
       passwordHash,
       role: 'parentA',
-      twoFactorEnabled: true
+      twoFactorEnabled: false
     }
   });
 
@@ -124,7 +124,7 @@ export async function seedDemoData(options = {}) {
       email: 'marek@coparentes.app',
       passwordHash,
       role: 'parentB',
-      twoFactorEnabled: true
+      twoFactorEnabled: false
     }
   });
 

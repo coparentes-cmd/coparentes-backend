@@ -1,10 +1,6 @@
 /**
- * Integration tests: OTP login rate limits (verify per-user + issue + login email).
- * Framework: node:test (same as the rest of the backend).
- *
- * Behaviour note (scenario 2): otpVerifyLimiter allows 5 attempts (max: 5), then
- * the next request is 429. So wrong OTP #1–#5 → 401 (or business 429 otp_locked),
- * #6+ → rate-limit 429. (If product intent was “5th call is 429”, max would be 4.)
+ * Login rate limits after 2FA / OTP product path retirement.
+ * OTP challenge issuance is disabled; password login issues a session directly.
  */
 import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -43,7 +39,7 @@ function isRateLimited(res) {
   return res.status === 429 && res.json?.error === RATE_MSG;
 }
 
-describe('OTP / login rate limits', { skip: !(await dbReady()) }, () => {
+describe('Login rate limits (OTP retired)', { skip: !(await dbReady()) }, () => {
   /** @type {import('node:http').Server} */
   let server;
   /** @type {string} */
@@ -66,6 +62,7 @@ describe('OTP / login rate limits', { skip: !(await dbReady()) }, () => {
         email,
         passwordHash,
         role: 'parentA',
+        // Legacy flag — must not trigger OTP after retirement.
         twoFactorEnabled: true
       }
     });
@@ -92,84 +89,19 @@ describe('OTP / login rate limits', { skip: !(await dbReady()) }, () => {
     });
   });
 
-  it('1) correct password → requiresOtp, not 429', async () => {
+  it('correct password issues session without OTP challenge', async () => {
     const res = await request(server, 'POST', '/api/auth/login', {
       body: { email, password: PASSWORD }
     });
 
     assert.equal(isRateLimited(res), false);
     assert.equal(res.status, 200);
-    assert.equal(res.json?.requiresOtp, true);
-    assert.equal(typeof res.json?.challengeId, 'string');
-    assert.ok(res.json.challengeId.length >= 8);
+    assert.equal(res.json?.requiresOtp, undefined);
+    assert.ok(res.json?.token, 'session token required');
+    assert.ok(res.json?.user?.id);
   });
 
-  it('2+3) five wrong verifies then 429; new challenge still blocked', async () => {
-    const login = await request(server, 'POST', '/api/auth/login', {
-      body: { email, password: PASSWORD }
-    });
-    assert.equal(login.status, 200, JSON.stringify(login.json));
-    const challengeId = login.json.challengeId;
-
-    // Product limiter: 5 allowed attempts, then lock → 6th is rate-limit 429.
-    for (let i = 0; i < 5; i += 1) {
-      const res = await request(server, 'POST', '/api/auth/login/verify-otp', {
-        body: { challengeId, code: '000000' }
-      });
-      assert.equal(isRateLimited(res), false, `attempt ${i + 1} should not be rate-limited yet`);
-      assert.ok(
-        [400, 401].includes(res.status) ||
-          (res.status === 429 && res.json?.error === 'otp_locked'),
-        `attempt ${i + 1}: unexpected ${res.status} ${JSON.stringify(res.json)}`
-      );
-    }
-
-    const sixth = await request(server, 'POST', '/api/auth/login/verify-otp', {
-      body: { challengeId, code: '000000' }
-    });
-    assert.equal(isRateLimited(sixth), true, '6th verify must be rate-limited');
-
-    // Resend may succeed (separate issue bucket); verify with new id must stay locked.
-    const resend = await request(server, 'POST', '/api/auth/login/resend-otp', {
-      body: { challengeId }
-    });
-    assert.ok(
-      resend.status === 200 || isRateLimited(resend),
-      `resend unexpected: ${resend.status} ${JSON.stringify(resend.json)}`
-    );
-
-    const nextChallengeId =
-      resend.status === 200 ? resend.json.challengeId : challengeId;
-
-    const afterResend = await request(server, 'POST', '/api/auth/login/verify-otp', {
-      body: { challengeId: nextChallengeId, code: '111111' }
-    });
-    assert.equal(
-      isRateLimited(afterResend),
-      true,
-      'verify after new challenge must still be rate-limited (per-user)'
-    );
-  });
-
-  it('4) OTP issue limit: 4th successful-password login is 429', async () => {
-    for (let i = 0; i < 3; i += 1) {
-      const res = await request(server, 'POST', '/api/auth/login', {
-        body: { email, password: PASSWORD },
-        headers: { 'X-Forwarded-For': `203.0.113.${10 + i}` }
-      });
-      assert.equal(res.status, 200, `login ${i + 1}: ${JSON.stringify(res.json)}`);
-      assert.equal(res.json?.requiresOtp, true);
-    }
-
-    const fourth = await request(server, 'POST', '/api/auth/login', {
-      body: { email, password: PASSWORD },
-      headers: { 'X-Forwarded-For': '203.0.113.99' }
-    });
-    assert.equal(isRateLimited(fourth), true);
-    assert.equal(fourth.json?.requiresOtp, undefined);
-  });
-
-  it('5) loginEmailLimiter: 6th wrong password blocked (same email, varying IP)', async () => {
+  it('loginEmailLimiter: 6th wrong password blocked (same email, varying IP)', async () => {
     for (let i = 0; i < 5; i += 1) {
       const res = await request(server, 'POST', '/api/auth/login', {
         body: { email, password: 'WrongPassword99!' },

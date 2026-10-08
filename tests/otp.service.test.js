@@ -31,17 +31,20 @@ describe('otp.service helpers', () => {
     assert.equal(maskEmail('ab@test.com'), 'a***@test.com');
   });
 
-  it('requires OTP only when 2FA is enabled for parent emails', () => {
+  it('never requires login OTP (2FA product path retired)', () => {
     assert.equal(
       requiresEmailOtp({ email: 'parent@example.com', twoFactorEnabled: true }),
-      true
+      false
     );
     assert.equal(
       requiresEmailOtp({ email: 'parent@example.com', twoFactorEnabled: false }),
       false
     );
     assert.equal(
-      requiresEmailOtp({ email: 'child+cuid@accounts.coparentes.internal', twoFactorEnabled: true }),
+      requiresEmailOtp({
+        email: 'child+cuid@accounts.coparentes.internal',
+        twoFactorEnabled: true
+      }),
       false
     );
   });
