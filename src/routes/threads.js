@@ -107,7 +107,7 @@ router.post('/', requireParentRole, async (req, res, next) => {
   }
 });
 
-router.post('/channel', requireParentRole, async (req, res, next) => {
+router.post('/channel', requireParentOrChildMessage, async (req, res, next) => {
   try {
     const schema = z.object({
       category: z.enum([
@@ -123,12 +123,18 @@ router.post('/channel', requireParentRole, async (req, res, next) => {
     });
     const data = schema.parse(req.body);
 
+    // Child may only open/create the family channel (Z dziećmi).
+    if (req.user.role === 'child' && data.category !== 'Rodzina') {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
     const thread =
       data.category === 'Rodzina'
         ? await getOrCreateFamilyThread({
             workspaceId: req.user.workspaceId,
             createdById: req.user.id,
-            threadKeys: data.threadKeys
+            threadKeys: data.threadKeys,
+            viewerRole: req.user.role
           })
         : await getOrCreateCategoryThread({
             workspaceId: req.user.workspaceId,

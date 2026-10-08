@@ -164,7 +164,8 @@ export async function getThreadById(
 export async function getOrCreateFamilyThread({
   workspaceId,
   createdById,
-  threadKeys = null
+  threadKeys = null,
+  viewerRole = 'parentA'
 }) {
   const existing = await prisma.thread.findFirst({
     where: {
@@ -177,7 +178,7 @@ export async function getOrCreateFamilyThread({
   });
 
   if (existing) {
-    return getThreadById(workspaceId, existing.id, createdById, 'parentA');
+    return getThreadById(workspaceId, existing.id, createdById, viewerRole);
   }
 
   // threadKeys optional (legacy E2E); ignored for new KEY_MESSAGES-only chat.
@@ -201,7 +202,7 @@ export async function getOrCreateFamilyThread({
     return created;
   });
 
-  return getThreadById(workspaceId, thread.id, createdById, 'parentA');
+  return getThreadById(workspaceId, thread.id, createdById, viewerRole);
 }
 
 export async function createThread({

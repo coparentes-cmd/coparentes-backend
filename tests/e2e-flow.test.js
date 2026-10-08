@@ -462,6 +462,20 @@ describe('E2E flow (register → join → thread → message → export → down
     const familyThread = listAsChild.json.threads.find((t) => t.category === 'Rodzina');
     assert.ok(familyThread, 'family thread required');
 
+    const childOpenFamily = await request(server, 'POST', '/api/threads/channel', {
+      token: tokenChild,
+      body: { category: 'Rodzina' }
+    });
+    assert.equal(childOpenFamily.status, 200, JSON.stringify(childOpenFamily.json));
+    assert.equal(childOpenFamily.json.id, familyThread.id);
+
+    const childOpenFinance = await request(server, 'POST', '/api/threads/channel', {
+      token: tokenChild,
+      body: { category: 'Finanse' }
+    });
+    assert.equal(childOpenFinance.status, 403);
+    assert.equal(childOpenFinance.json.error, 'forbidden');
+
     const childMessage = await request(
       server,
       'POST',
