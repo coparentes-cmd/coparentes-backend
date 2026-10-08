@@ -1,7 +1,8 @@
 -- Per-child invite code (unique). Backfill existing rows, then enforce NOT NULL.
+-- Use md5(random()...) — no pgcrypto required (Railway Postgres lacks gen_random_bytes by default).
 ALTER TABLE "Child" ADD COLUMN "inviteCode" TEXT;
 
--- Assign unique codes (base64url-ish uppercase), avoid colliding with workspace codes.
+-- Assign unique codes (uppercase hex-ish), avoid colliding with workspace codes.
 DO $$
 DECLARE
   r RECORD;
@@ -11,9 +12,7 @@ BEGIN
   FOR r IN SELECT id FROM "Child" LOOP
     attempts := 0;
     LOOP
-      candidate := UPPER(encode(gen_random_bytes(12), 'base64'));
-      -- strip URL-unsafe chars that encode() may produce
-      candidate := REPLACE(REPLACE(candidate, '+', 'A'), '/', 'B');
+      candidate := UPPER(SUBSTRING(md5(random()::text || clock_timestamp()::text || r.id::text) FROM 1 FOR 12));
       EXIT WHEN NOT EXISTS (SELECT 1 FROM "Child" WHERE "inviteCode" = candidate AND id <> r.id)
         AND NOT EXISTS (SELECT 1 FROM "Workspace" WHERE "inviteCode" = candidate OR "childInviteCode" = candidate);
       attempts := attempts + 1;
