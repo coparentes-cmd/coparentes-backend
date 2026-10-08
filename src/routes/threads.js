@@ -75,7 +75,8 @@ router.post('/', requireParentRole, async (req, res, next) => {
       subject: z.string().min(3),
       category: z.string().min(2),
       childId: optionalEntityIdSchema,
-      threadKeys: z.array(threadKeyEntrySchema).min(1)
+      // Optional legacy E2E field — ignored for KEY_MESSAGES-only chat.
+      threadKeys: z.array(threadKeyEntrySchema).min(1).optional()
     });
     const data = schema.parse(req.body);
 
@@ -85,7 +86,7 @@ router.post('/', requireParentRole, async (req, res, next) => {
       subject: data.subject,
       category: data.category,
       childId: data.childId,
-      threadKeys: data.threadKeys
+      threadKeys: data.threadKeys ?? null
     });
 
     return res.status(201).json(thread);
@@ -108,30 +109,18 @@ router.post('/', requireParentRole, async (req, res, next) => {
 
 router.post('/channel', requireParentRole, async (req, res, next) => {
   try {
-    const schema = z
-      .object({
-        category: z.enum([
-          'Wszystkie',
-          'Szkoła',
-          'Zdrowie',
-          'Finanse',
-          'Zmiana grafiku',
-          'Rodzina'
-        ]),
-        threadKeys: z.array(threadKeyEntrySchema).min(1).optional()
-      })
-      .superRefine((data, ctx) => {
-        if (data.category === 'Zmiana grafiku') {
-          return;
-        }
-        if (!data.threadKeys?.length) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'thread_keys_required',
-            path: ['threadKeys']
-          });
-        }
-      });
+    const schema = z.object({
+      category: z.enum([
+        'Wszystkie',
+        'Szkoła',
+        'Zdrowie',
+        'Finanse',
+        'Zmiana grafiku',
+        'Rodzina'
+      ]),
+      // Optional legacy E2E field — no longer required.
+      threadKeys: z.array(threadKeyEntrySchema).min(1).optional()
+    });
     const data = schema.parse(req.body);
 
     const thread =
@@ -206,8 +195,7 @@ router.get(
 router.post('/:threadId/messages', requireParentOrChildMessage, async (req, res, next) => {
   try {
     const schema = z.object({
-      ciphertext: z.string().min(1).max(8000),
-      nonce: z.string().min(1),
+      content: z.string().min(1).max(8000),
       tone: z.enum(['neutral', 'tense', 'aggressive', 'positive']).optional(),
       attachments: z.array(attachmentSchema).max(3).optional()
     });
@@ -218,8 +206,7 @@ router.post('/:threadId/messages', requireParentOrChildMessage, async (req, res,
       workspaceId: req.user.workspaceId,
       threadId,
       sender: req.user,
-      ciphertext: data.ciphertext,
-      nonce: data.nonce,
+      content: data.content,
       tone: data.tone ?? 'neutral',
       attachments: data.attachments ?? []
     });

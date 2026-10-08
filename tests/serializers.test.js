@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { serializeThread } from '../src/services/serializers.js';
+import { serializeMessage, serializeThread } from '../src/services/serializers.js';
 
 describe('serializeThread hasUnread', () => {
   const thread = {
@@ -63,5 +63,33 @@ describe('serializeThread hasUnread', () => {
 
     const forA = serializeThread(thread, onlyOwnUnread, 'user_a');
     assert.equal(forA.hasUnread, false);
+  });
+
+  it('marks abandoned client-E2E payloads as legacyE2e with empty content', () => {
+    const forA = serializeThread(thread, messages, 'user_a');
+    const fromB = forA.messages.find((m) => m.id === 'msg_b');
+    assert.equal(fromB.content, '');
+    assert.equal(fromB.legacyE2e, true);
+  });
+});
+
+describe('serializeMessage plaintext KEY_MESSAGES', () => {
+  it('returns plaintext content for new user messages', () => {
+    const message = serializeMessage({
+      id: 'msg_plain',
+      threadId: 'thread_1',
+      senderId: 'user_a',
+      senderName: 'Anna',
+      content: 'Nowa wiadomość',
+      messageType: 'user',
+      tone: 'neutral',
+      attachmentsJson: null,
+      sentAt: new Date('2026-01-01T12:00:00.000Z'),
+      isDelivered: true,
+      isRead: false,
+      hash: 'h_plain'
+    });
+    assert.equal(message.content, 'Nowa wiadomość');
+    assert.equal(message.legacyE2e, undefined);
   });
 });

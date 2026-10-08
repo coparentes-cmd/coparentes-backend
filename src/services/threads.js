@@ -164,10 +164,8 @@ export async function getThreadById(
 export async function getOrCreateFamilyThread({
   workspaceId,
   createdById,
-  threadKeys
+  threadKeys = null
 }) {
-  requireThreadKeys(threadKeys);
-
   const existing = await prisma.thread.findFirst({
     where: {
       workspaceId,
@@ -182,7 +180,10 @@ export async function getOrCreateFamilyThread({
     return getThreadById(workspaceId, existing.id, createdById, 'parentA');
   }
 
-  await assertValidParentThreadKeys(workspaceId, threadKeys);
+  // threadKeys optional (legacy E2E); ignored for new KEY_MESSAGES-only chat.
+  if (threadKeys?.length) {
+    await assertValidParentThreadKeys(workspaceId, threadKeys);
+  }
 
   const thread = await prisma.$transaction(async (tx) => {
     const created = await tx.thread.create({
@@ -228,7 +229,9 @@ export async function createThread({
     });
   }
 
-  await assertValidParentThreadKeys(workspaceId, threadKeys);
+  if (threadKeys?.length) {
+    await assertValidParentThreadKeys(workspaceId, threadKeys);
+  }
 
   let safeChildId = null;
   if (childId) {
@@ -276,10 +279,6 @@ export async function getOrCreateCategoryThread({
 
   const systemChannel = isSystemCategory(category);
 
-  if (!systemChannel) {
-    requireThreadKeys(threadKeys);
-  }
-
   const existing = await prisma.thread.findFirst({
     where: { workspaceId, category, subject: category, audience: 'parents' },
     orderBy: { createdAt: 'asc' }
@@ -289,7 +288,7 @@ export async function getOrCreateCategoryThread({
     return getThreadById(workspaceId, existing.id, createdBy.id, createdBy.role);
   }
 
-  if (!systemChannel) {
+  if (!systemChannel && threadKeys?.length) {
     await assertValidParentThreadKeys(workspaceId, threadKeys);
   }
 
@@ -433,14 +432,14 @@ export async function markThreadAsRead({
 }
 
 /**
- * Client E2E path only: ciphertext + nonce → KEY_MESSAGES(JSON envelope).
+ * User chat: plaintext → KEY_MESSAGES (same at-rest model as system messages).
+ * Client E2E (ciphertext/nonce) is no longer accepted.
  */
 export async function addMessageToThread({
   workspaceId,
   threadId,
   sender,
-  ciphertext,
-  nonce,
+  content,
   tone = 'neutral',
   attachments = []
 }) {
@@ -456,18 +455,12 @@ export async function addMessageToThread({
   }
 
   const normalizedAttachments = normalizeAttachments(attachments);
-  const safeCiphertext = String(ciphertext ?? '').trim();
-  const safeNonce = String(nonce ?? '').trim();
-  if (!safeCiphertext || !safeNonce) {
+  const safeContent = String(content ?? '').trim();
+  if (!safeContent) {
     const error = new Error('message_empty');
     error.code = 'message_empty';
     throw error;
   }
-
-  const plaintextForAtRest = JSON.stringify({
-    ciphertext: safeCiphertext,
-    nonce: safeNonce
-  });
 
   const sentAt = new Date();
   const senderDisplayName =
@@ -475,10 +468,7 @@ export async function addMessageToThread({
     sender.name ||
     'Użytkownik';
   const senderName = senderDisplayName.split(' ')[0] || senderDisplayName;
-  const encryptedContent = encryptOptional(
-    plaintextForAtRest,
-    CRYPTO_KEYS.KEY_MESSAGES
-  );
+  const encryptedContent = encryptOptional(safeContent, CRYPTO_KEYS.KEY_MESSAGES);
   const encryptedAttachments =
     normalizedAttachments.length > 0
       ? encryptOptional(JSON.stringify(normalizedAttachments), CRYPTO_KEYS.KEY_MESSAGES)
@@ -486,7 +476,7 @@ export async function addMessageToThread({
   const payload = {
     threadId: thread.id,
     senderId: sender.id,
-    content: plaintextForAtRest,
+    content: safeContent,
     sentAt: sentAt.toISOString(),
     attachmentIds: normalizedAttachments.map((item) => item.id)
   };

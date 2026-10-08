@@ -69,21 +69,30 @@ export function serializeMessage(message) {
     isShielded: message.tone === 'aggressive'
   };
 
+  // System + new user messages: plaintext under KEY_MESSAGES.
+  // Legacy E2E user messages were stored as KEY_MESSAGES(JSON {ciphertext,nonce}).
   if (messageType === 'system') {
     return { ...base, content: atRestPayload };
   }
 
-  let ciphertext = '';
-  let nonce = '';
-  try {
-    const parsed = JSON.parse(atRestPayload);
-    ciphertext = typeof parsed?.ciphertext === 'string' ? parsed.ciphertext : '';
-    nonce = typeof parsed?.nonce === 'string' ? parsed.nonce : '';
-  } catch (_) {
-    // Malformed at-rest E2E envelope — client will treat as undecryptable.
+  if (atRestPayload) {
+    try {
+      const parsed = JSON.parse(atRestPayload);
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        typeof parsed.ciphertext === 'string' &&
+        typeof parsed.nonce === 'string'
+      ) {
+        // Abandoned client-E2E history — not recoverable server-side.
+        return { ...base, content: '', legacyE2e: true };
+      }
+    } catch (_) {
+      // Not JSON → treat as plaintext user message.
+    }
   }
 
-  return { ...base, ciphertext, nonce };
+  return { ...base, content: atRestPayload || '' };
 }
 
 export function serializeThread(thread, messages, viewerUserId = null) {

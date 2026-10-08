@@ -35,19 +35,11 @@ const consents = {
   ANALYTICS: false
 };
 
-function e2eBody(plainLabel) {
+function messageBody(plainLabel) {
   return {
-    ciphertext: Buffer.from(plainLabel, 'utf8').toString('base64'),
-    nonce: Buffer.from(`nonce-${plainLabel}`).toString('base64'),
+    content: plainLabel,
     tone: 'neutral'
   };
-}
-
-function parentThreadKeys(userIdA, userIdB) {
-  return [
-    { userId: userIdA, encryptedKey: `sealed-for-${userIdA}` },
-    { userId: userIdB, encryptedKey: `sealed-for-${userIdB}` }
-  ];
 }
 
 describe('Account soft-delete', { skip: !(await dbReady()) }, () => {
@@ -129,8 +121,7 @@ describe('Account soft-delete', { skip: !(await dbReady()) }, () => {
       body: {
         subject: 'Szkoła',
         category: 'Szkoła',
-        audience: 'parents',
-        threadKeys: parentThreadKeys(userIdA, userIdB)
+        audience: 'parents'
       }
     });
     assert.equal(thread.status, 201, JSON.stringify(thread.json));
@@ -141,7 +132,7 @@ describe('Account soft-delete', { skip: !(await dbReady()) }, () => {
       server,
       'POST',
       `/api/threads/${threadId}/messages`,
-      { token: tokenB, body: e2eBody(labelFromB) }
+      { token: tokenB, body: messageBody(labelFromB) }
     );
     assert.equal(sendB.status, 201, JSON.stringify(sendB.json));
 

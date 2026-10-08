@@ -442,7 +442,7 @@ export async function changeUserPassword(
     newPrivateKeyEnvelope.length >= 1 &&
     newPrivateKeyEnvelope.length <= 4000;
 
-  // Replacing the identity key requires both public key + envelope in one write.
+  // Optional legacy E2E key replacement (no longer required for chat).
   if (hasNewPublicKey) {
     if (!isValidX25519PublicKeyBase64(newPublicKey)) {
       return { error: 'invalid_public_key', status: 400 };
@@ -452,31 +452,29 @@ export async function changeUserPassword(
     }
   }
 
-  // If E2E envelope already exists, require a simultaneous re-wrap (or full key
-  // replacement) under the new password. Otherwise the new password could not
-  // unlock the old envelope.
-  if (user.privateKeyEnvelope && !hasNewEnvelope) {
-    return { error: 'private_key_envelope_required', status: 400 };
-  }
-
   const passwordHash = await bcrypt.hash(newPassword, 12);
 
-  if (user.privateKeyEnvelope || hasNewEnvelope) {
-    await prisma.$transaction(async (tx) => {
-      await tx.user.update({
-        where: { id: user.id },
-        data: {
-          passwordHash,
-          privateKeyEnvelope: newPrivateKeyEnvelope,
-          ...(hasNewPublicKey ? { publicKey: newPublicKey } : {}),
-          mustChangePassword: false
-        }
-      });
-    });
-  } else {
+  if (hasNewEnvelope) {
     await prisma.user.update({
       where: { id: user.id },
-      data: { passwordHash, mustChangePassword: false }
+      data: {
+        passwordHash,
+        privateKeyEnvelope: newPrivateKeyEnvelope,
+        ...(hasNewPublicKey ? { publicKey: newPublicKey } : {}),
+        mustChangePassword: false
+      }
+    });
+  } else {
+    // Clear abandoned client-E2E material so password change never blocks on it.
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash,
+        mustChangePassword: false,
+        publicKey: null,
+        privateKeyEnvelope: null,
+        recoveryKeyEnvelope: null
+      }
     });
   }
 
