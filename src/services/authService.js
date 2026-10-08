@@ -4,6 +4,7 @@ import {
   buildAuthPayload,
   createWorkspace,
   findWorkspaceByChildInviteCode,
+  findChildByInviteCode,
   findWorkspaceByInviteCode,
   assertParentInviteJoinAllowed,
   getChildJoinPreview,
@@ -122,9 +123,38 @@ export async function registerUser({ name, email, password, workspaceName, conse
 export async function fetchChildJoinPreview(childInviteCode) {
   const preview = await getChildJoinPreview(childInviteCode);
   if (!preview) {
-    return { error: 'workspace_not_found', status: 404 };
+    return { error: 'invalid_invite', status: 404 };
   }
   return { preview };
+}
+
+async function resolveChildProfileForAccess(childInviteCode, dateOfBirth) {
+  const code = String(childInviteCode ?? '').trim().toUpperCase();
+
+  // Preferred path: unique per-child invite code.
+  const byCode = await findChildByInviteCode(code);
+  if (byCode) {
+    if (!isSameCalendarDay(byCode.dateOfBirth, dateOfBirth)) {
+      return { error: 'child_dob_mismatch', status: 400 };
+    }
+    return { childProfile: byCode, workspaceId: byCode.workspaceId };
+  }
+
+  // Legacy: workspace-wide childInviteCode + DOB disambiguation.
+  const workspace = await findWorkspaceByChildInviteCode(code);
+  if (!workspace) {
+    return { error: 'invalid_invite', status: 404 };
+  }
+
+  const matches = await findChildByDateOfBirth(workspace.id, dateOfBirth);
+  if (matches.length === 0) {
+    return { error: 'child_dob_mismatch', status: 400 };
+  }
+  if (matches.length > 1) {
+    return { error: 'ambiguous_child_profile', status: 409 };
+  }
+
+  return { childProfile: matches[0], workspaceId: workspace.id };
 }
 
 export async function authenticateChildAccess({
@@ -133,29 +163,23 @@ export async function authenticateChildAccess({
   password,
   name
 }) {
-  const workspace = await findWorkspaceByChildInviteCode(childInviteCode);
-
-  if (!workspace) {
-    return { error: 'workspace_not_found', status: 404 };
-  }
-
   const dateOfBirth = parseDateOfBirth(dateOfBirthRaw);
   if (!dateOfBirth) {
     return { error: 'invalid_date_of_birth', status: 400 };
   }
 
-  const matches = await findChildByDateOfBirth(workspace.id, dateOfBirth);
-  if (matches.length === 0) {
-    return { error: 'child_not_found', status: 404 };
-  }
-  if (matches.length > 1) {
-    return { error: 'ambiguous_child_profile', status: 409 };
+  const resolved = await resolveChildProfileForAccess(childInviteCode, dateOfBirth);
+  if (resolved.error) {
+    return { error: resolved.error, status: resolved.status };
   }
 
-  const childProfile = matches[0];
+  const childProfile = resolved.childProfile;
 
   if (childProfile.linkedAccount) {
     const user = childProfile.linkedAccount;
+    if (user.deletedAt) {
+      return { error: 'invalid_credentials', status: 401 };
+    }
     if (!(await bcrypt.compare(password, user.passwordHash))) {
       return { error: 'invalid_credentials', status: 401 };
     }
@@ -176,7 +200,7 @@ export async function authenticateChildAccess({
   const passwordHash = await bcrypt.hash(password, 12);
   const user = await prisma.user.create({
     data: {
-      workspaceId: workspace.id,
+      workspaceId: resolved.workspaceId,
       name,
       email,
       passwordHash,
@@ -188,6 +212,61 @@ export async function authenticateChildAccess({
   });
 
   return { user, status: 201 };
+}
+
+/**
+ * Returning child login: display name (login) + password + date of birth.
+ * No e-mail. Name is not required to match the parent's Child.name.
+ */
+export async function authenticateChildLogin({
+  login,
+  dateOfBirth: dateOfBirthRaw,
+  password
+}) {
+  const dateOfBirth = parseDateOfBirth(dateOfBirthRaw);
+  if (!dateOfBirth) {
+    return { error: 'invalid_date_of_birth', status: 400 };
+  }
+
+  const loginName = String(login ?? '').trim();
+  if (loginName.length < 2) {
+    return { error: 'invalid_request', status: 400 };
+  }
+
+  const candidates = await prisma.child.findMany({
+    where: {
+      linkedAccount: {
+        is: { role: 'child', deletedAt: null }
+      }
+    },
+    include: { linkedAccount: true }
+  });
+
+  const matches = candidates.filter((child) => {
+    if (!isSameCalendarDay(child.dateOfBirth, dateOfBirth)) {
+      return false;
+    }
+    const accountName = decryptOptionalSafe(
+      child.linkedAccount.name,
+      CRYPTO_KEYS.KEY_GENERAL,
+      ''
+    );
+    return accountName.trim().toLowerCase() === loginName.toLowerCase();
+  });
+
+  if (matches.length === 0) {
+    return { error: 'invalid_credentials', status: 401 };
+  }
+  if (matches.length > 1) {
+    return { error: 'ambiguous_child_login', status: 409 };
+  }
+
+  const user = matches[0].linkedAccount;
+  if (!(await bcrypt.compare(password, user.passwordHash))) {
+    return { error: 'invalid_credentials', status: 401 };
+  }
+
+  return { user, status: 200 };
 }
 
 export async function joinWorkspace({

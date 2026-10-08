@@ -130,8 +130,10 @@ describe('E2E flow (register → join → thread → message → export → down
     assert.equal(register.status, 201, `register failed: ${JSON.stringify(register.json)}`);
     assertAuthSession(register.json, 'parentA');
     const inviteCode = register.json.workspace.inviteCode;
-    const childInviteCode = register.json.workspace.childInviteCode;
-    assert.ok(childInviteCode, 'workspace.childInviteCode required');
+    assert.ok(
+      register.json.workspace.childInviteCode,
+      'workspace.childInviteCode required (legacy field)'
+    );
     testWorkspaceId = register.json.workspace.id;
     const tokenA = register.json.token;
     const userIdA = register.json.user.id;
@@ -153,6 +155,8 @@ describe('E2E flow (register → join → thread → message → export → down
     assert.ok(addChild.json.id);
     assert.equal(addChild.json.name, 'E2E Zosia Test');
     assert.equal(addChild.json.school, 'SP E2E');
+    assert.ok(addChild.json.inviteCode, 'child inviteCode required');
+    const zosiaInviteCode = addChild.json.inviteCode;
 
     const addChild2 = await request(server, 'POST', '/api/workspace/children', {
       token: tokenA,
@@ -164,6 +168,8 @@ describe('E2E flow (register → join → thread → message → export → down
     });
     assert.equal(addChild2.status, 201);
     assert.equal(addChild2.json.name, 'E2E Tomek Test');
+    assert.ok(addChild2.json.inviteCode);
+    assert.notEqual(addChild2.json.inviteCode, zosiaInviteCode);
 
     const forbiddenChild = await request(server, 'POST', '/api/workspace/children', {
       token: tokenA,
@@ -389,16 +395,17 @@ describe('E2E flow (register → join → thread → message → export → down
     const joinPreview = await request(
       server,
       'GET',
-      `/api/auth/join-preview?childInviteCode=${encodeURIComponent(childInviteCode)}`
+      `/api/auth/join-preview?childInviteCode=${encodeURIComponent(zosiaInviteCode)}`
     );
     assert.equal(joinPreview.status, 200);
-    assert.ok(joinPreview.json.children.length >= 2);
+    assert.equal(joinPreview.json.children.length, 1);
+    assert.equal(joinPreview.json.children[0].id, addChild.json.id);
 
     const joinChild = await request(server, 'POST', '/api/auth/child/access', {
       body: {
         name: 'E2E Zosia Child',
         password: PASSWORD,
-        childInviteCode,
+        childInviteCode: zosiaInviteCode,
         dateOfBirth: '2016-05-12T00:00:00.000Z'
       }
     });
@@ -406,15 +413,25 @@ describe('E2E flow (register → join → thread → message → export → down
     assertAuthSession(joinChild.json, 'child');
     const tokenChild = joinChild.json.token;
 
-    const loginChild = await request(server, 'POST', '/api/auth/child/access', {
+    const loginChild = await request(server, 'POST', '/api/auth/child/login', {
       body: {
+        login: 'E2E Zosia Child',
         password: PASSWORD,
-        childInviteCode,
         dateOfBirth: '2016-05-12T00:00:00.000Z'
       }
     });
     assert.equal(loginChild.status, 200, `loginChild failed: ${JSON.stringify(loginChild.json)}`);
     assertAuthSession(loginChild.json, 'child');
+
+    const wrongDob = await request(server, 'POST', '/api/auth/child/access', {
+      body: {
+        password: PASSWORD,
+        childInviteCode: zosiaInviteCode,
+        dateOfBirth: '2010-01-01T00:00:00.000Z'
+      }
+    });
+    assert.equal(wrongDob.status, 400);
+    assert.equal(wrongDob.json.error, 'child_dob_mismatch');
 
     const listAsChild = await request(server, 'GET', '/api/threads', {
       token: tokenChild

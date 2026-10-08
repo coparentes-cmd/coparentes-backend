@@ -35,6 +35,7 @@ export function serializeChild(child) {
     name: decryptOptionalSafe(child.name, CRYPTO_KEYS.KEY_GENERAL, 'Dziecko'),
     dateOfBirth: child.dateOfBirth.toISOString(),
     school: decryptOptionalSafe(child.school, CRYPTO_KEYS.KEY_GENERAL, ''),
+    inviteCode: child.inviteCode ?? null,
     // Additive: User.id of the linked child login account, or null if not joined yet.
     linkedAccountId: child.linkedAccount?.id ?? null
   };

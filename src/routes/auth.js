@@ -12,6 +12,7 @@ import {
 } from '../services/sessionCookie.service.js';
 import {
   authenticateChildAccess,
+  authenticateChildLogin,
   buildSessionPayload,
   changeUserPassword,
   fetchChildJoinPreview,
@@ -154,6 +155,12 @@ const childAccessSchema = z.object({
   name: z.string().trim().min(2).optional()
 });
 
+const childLoginSchema = z.object({
+  login: z.string().trim().min(2).max(120),
+  dateOfBirth: z.string().datetime(),
+  password: z.string().min(PASSWORD_MIN_LENGTH)
+});
+
 const loginSchema = z.object({
   email: z.string().trim().toLowerCase().email(),
   password: z.string().min(PASSWORD_MIN_LENGTH)
@@ -229,6 +236,25 @@ router.post('/child/access', authActionLimiter, async (req, res, next) => {
   try {
     const data = childAccessSchema.parse(req.body);
     const result = await authenticateChildAccess(data);
+
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    return issueSessionResponse(result.user, result.status, res);
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
+/** Returning child: login name + password + date of birth (no e-mail). */
+router.post('/child/login', authActionLimiter, async (req, res, next) => {
+  try {
+    const data = childLoginSchema.parse(req.body);
+    const result = await authenticateChildLogin(data);
 
     if (result.error) {
       return res.status(result.status).json({ error: result.error });

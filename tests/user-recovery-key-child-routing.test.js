@@ -244,7 +244,8 @@ describe(
         data: {
           workspaceId: workspace.id,
           name: 'Orphan Child',
-          dateOfBirth: new Date(Date.UTC(2016, 0, 1))
+          dateOfBirth: new Date(Date.UTC(2016, 0, 1)),
+          inviteCode: `ORPHAN${stamp}`
         }
       });
 

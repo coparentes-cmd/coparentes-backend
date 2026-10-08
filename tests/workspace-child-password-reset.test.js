@@ -116,9 +116,12 @@ describe(
       });
       assert.equal(addChild.status, 201, JSON.stringify(addChild.json));
 
+      assert.ok(addChild.json.inviteCode, 'child inviteCode required');
+      const childInviteCode = addChild.json.inviteCode;
+
       const childAccess = await request(server, 'POST', '/api/auth/child/access', {
         body: {
-          childInviteCode: register.json.workspace.childInviteCode,
+          childInviteCode,
           dateOfBirth: dob,
           password: CHILD_PASSWORD,
           name: 'Basia'
@@ -132,7 +135,7 @@ describe(
         parentBEmail,
         parentAToken: register.json.token,
         parentBToken,
-        childInviteCode: register.json.workspace.childInviteCode,
+        childInviteCode,
         dob,
         childUserId: childAccess.json.user.id,
         childToken: childAccess.json.token,

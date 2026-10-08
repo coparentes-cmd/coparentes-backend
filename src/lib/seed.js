@@ -54,7 +54,8 @@ export async function ensureTestUser(options = {}) {
       workspaceId: workspace.id,
       name: 'Dziecko testowe',
       dateOfBirth: new Date('2016-03-20'),
-      school: 'SP Testowa 1'
+      school: 'SP Testowa 1',
+      inviteCode: `CHILD${Date.now().toString(36).toUpperCase()}`
     }
   });
 
@@ -134,7 +135,8 @@ export async function seedDemoData(options = {}) {
       workspaceId: workspace.id,
       name: 'Zosia Kowalska',
       dateOfBirth: new Date('2016-05-12'),
-      school: 'SP nr 15 w Warszawie'
+      school: 'SP nr 15 w Warszawie',
+      inviteCode: 'ZOSIAKOWAL2026'
     }
   });
 

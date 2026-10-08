@@ -217,6 +217,8 @@ model Child {
   name        String
   dateOfBirth DateTime
   school      String?
+  /// Unikalny kod zaproszenia dla tego profilu dziecka (dołączanie / ponowne logowanie).
+  inviteCode  String    @unique
   createdAt   DateTime  @default(now())
 
   threads Thread[]
@@ -228,6 +230,7 @@ model Child {
   linkedAccount  User?      @relation("ChildLinkedAccount")
 
   @@index([workspaceId])
+  @@index([inviteCode])
 }
 
 /// Family document vault entry (metadata + optional inline file for MVP).

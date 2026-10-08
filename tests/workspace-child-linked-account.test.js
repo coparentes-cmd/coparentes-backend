@@ -96,9 +96,10 @@ describe(
       assert.ok(childBefore.dateOfBirth);
       assert.equal('school' in childBefore, true);
 
+      assert.ok(addChild.json.inviteCode, 'per-child inviteCode required');
       const childAccess = await request(server, 'POST', '/api/auth/child/access', {
         body: {
-          childInviteCode: register.json.workspace.childInviteCode,
+          childInviteCode: addChild.json.inviteCode,
           dateOfBirth: dob,
           password: CHILD_PASSWORD,
           name: 'Ola'

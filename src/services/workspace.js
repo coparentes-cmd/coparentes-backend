@@ -31,6 +31,27 @@ async function generateUniqueParentInviteCode(client = prisma) {
   return inviteCode;
 }
 
+/** Unique invite code for one child profile (must not collide with workspace codes). */
+export async function generateUniqueChildInviteCode(client = prisma) {
+  let inviteCode = createInviteCode();
+  let attempts = 0;
+
+  while (attempts < 8) {
+    const [onChild, onWorkspaceInvite, onWorkspaceChildInvite] = await Promise.all([
+      client.child.findUnique({ where: { inviteCode } }),
+      client.workspace.findUnique({ where: { inviteCode } }),
+      client.workspace.findUnique({ where: { childInviteCode: inviteCode } })
+    ]);
+    if (!onChild && !onWorkspaceInvite && !onWorkspaceChildInvite) {
+      return inviteCode;
+    }
+    inviteCode = createInviteCode();
+    attempts += 1;
+  }
+
+  return inviteCode;
+}
+
 export async function refreshParentInviteCode(workspaceId, client = prisma) {
   const inviteCode = await generateUniqueParentInviteCode(client);
   return client.workspace.update({
@@ -139,8 +160,37 @@ export async function findWorkspaceByChildInviteCode(childInviteCode) {
   });
 }
 
+export async function findChildByInviteCode(inviteCode) {
+  const code = inviteCode.trim().toUpperCase();
+  return prisma.child.findUnique({
+    where: { inviteCode: code },
+    include: {
+      workspace: true,
+      linkedAccount: true
+    }
+  });
+}
+
 export async function getChildJoinPreview(childInviteCode) {
-  const workspace = await findWorkspaceByChildInviteCode(childInviteCode);
+  const code = childInviteCode.trim().toUpperCase();
+
+  // Preferred: per-child invite code → one profile.
+  const child = await findChildByInviteCode(code);
+  if (child) {
+    return {
+      workspaceName: child.workspace.name,
+      children: [
+        {
+          id: child.id,
+          name: decryptOptionalSafe(child.name, CRYPTO_KEYS.KEY_GENERAL, 'Dziecko'),
+          hasAccount: child.linkedAccount != null
+        }
+      ]
+    };
+  }
+
+  // Legacy fallback: workspace-wide childInviteCode (pre per-child codes).
+  const workspace = await findWorkspaceByChildInviteCode(code);
   if (!workspace) {
     return null;
   }
@@ -148,19 +198,15 @@ export async function getChildJoinPreview(childInviteCode) {
   const children = await prisma.child.findMany({
     where: { workspaceId: workspace.id },
     orderBy: { name: 'asc' },
-    select: {
-      id: true,
-      name: true,
-      linkedAccount: { select: { id: true } }
-    }
+    include: { linkedAccount: { select: { id: true } } }
   });
 
   return {
     workspaceName: workspace.name,
-    children: children.map((child) => ({
-      id: child.id,
-      name: decryptOptionalSafe(child.name, CRYPTO_KEYS.KEY_GENERAL, 'Dziecko'),
-      hasAccount: child.linkedAccount != null
+    children: children.map((row) => ({
+      id: row.id,
+      name: decryptOptionalSafe(row.name, CRYPTO_KEYS.KEY_GENERAL, 'Dziecko'),
+      hasAccount: row.linkedAccount != null
     }))
   };
 }
@@ -171,16 +217,95 @@ export async function createChild({
   dateOfBirth,
   school
 }) {
+  const inviteCode = await generateUniqueChildInviteCode();
   const row = await prisma.child.create({
     data: {
       workspaceId,
       name: encryptOptional(name, CRYPTO_KEYS.KEY_GENERAL),
       dateOfBirth: new Date(dateOfBirth),
-      school: encryptOptional(school ?? null, CRYPTO_KEYS.KEY_GENERAL)
-    }
+      school: encryptOptional(school ?? null, CRYPTO_KEYS.KEY_GENERAL),
+      inviteCode
+    },
+    include: { linkedAccount: { select: { id: true } } }
   });
 
   return serializeChild(row);
+}
+
+export async function updateChild({
+  workspaceId,
+  childId,
+  name,
+  dateOfBirth,
+  school
+}) {
+  const existing = await prisma.child.findFirst({
+    where: { id: childId, workspaceId },
+    include: { linkedAccount: { select: { id: true } } }
+  });
+  if (!existing) {
+    return { error: 'child_not_found', status: 404 };
+  }
+
+  const data = {};
+  if (name != null) {
+    data.name = encryptOptional(name, CRYPTO_KEYS.KEY_GENERAL);
+  }
+  if (dateOfBirth != null) {
+    data.dateOfBirth = new Date(dateOfBirth);
+  }
+  if (school !== undefined) {
+    data.school = encryptOptional(school ?? null, CRYPTO_KEYS.KEY_GENERAL);
+  }
+
+  const row = await prisma.child.update({
+    where: { id: childId },
+    data,
+    include: { linkedAccount: { select: { id: true } } }
+  });
+
+  return { child: serializeChild(row) };
+}
+
+export async function deleteChild({ workspaceId, childId }) {
+  const existing = await prisma.child.findFirst({
+    where: { id: childId, workspaceId },
+    include: { linkedAccount: true }
+  });
+  if (!existing) {
+    return { error: 'child_not_found', status: 404 };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    if (existing.linkedAccount) {
+      await tx.user.update({
+        where: { id: existing.linkedAccount.id },
+        data: {
+          deletedAt: new Date(),
+          childProfileId: null,
+          email: `deleted+${existing.linkedAccount.id}@accounts.coparentes.internal`,
+          name: encryptOptional('Usunięte konto', CRYPTO_KEYS.KEY_GENERAL)
+        }
+      });
+    }
+    await tx.child.delete({ where: { id: childId } });
+  });
+
+  return { ok: true };
+}
+
+export async function updateWorkspaceName({ workspaceId, name }) {
+  const trimmed = String(name ?? '').trim();
+  if (trimmed.length < 2 || trimmed.length > 120) {
+    return { error: 'invalid_request', status: 400 };
+  }
+
+  const row = await prisma.workspace.update({
+    where: { id: workspaceId },
+    data: { name: trimmed }
+  });
+
+  return { workspace: await getWorkspaceGraph(row.id) };
 }
 
 export async function getWorkspaceGraph(workspaceId) {

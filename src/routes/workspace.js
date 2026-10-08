@@ -3,7 +3,13 @@ import rateLimit, { MemoryStore } from 'express-rate-limit';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { requireParentRole } from '../middleware/rbac.js';
-import { createChild, getWorkspaceGraph } from '../services/workspace.js';
+import {
+  createChild,
+  deleteChild,
+  getWorkspaceGraph,
+  updateChild,
+  updateWorkspaceName
+} from '../services/workspace.js';
 import { requestChildPasswordReset } from '../services/authService.js';
 import { prisma } from '../lib/prisma.js';
 import { entityIdSchema } from '../utils/ids.js';
@@ -80,6 +86,101 @@ router.post('/children', requireAuth, async (req, res, next) => {
     });
 
     return res.status(201).json(child);
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
+router.patch('/children/:childId', requireAuth, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'parentA' && req.user.role !== 'parentB') {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    const { childId } = z.object({ childId: entityIdSchema }).parse(req.params);
+    const schema = z.object({
+      name: z.string().trim().min(2).max(120).optional(),
+      dateOfBirth: z.string().datetime().optional(),
+      school: z.string().trim().min(1).max(200).nullable().optional()
+    });
+    const data = schema.parse(req.body);
+
+    if (data.dateOfBirth) {
+      const dob = new Date(data.dateOfBirth);
+      if (Number.isNaN(dob.getTime()) || dob > new Date()) {
+        return res.status(400).json({ error: 'invalid_date_of_birth' });
+      }
+    }
+
+    const result = await updateChild({
+      workspaceId: req.user.workspaceId,
+      childId,
+      name: data.name,
+      dateOfBirth: data.dateOfBirth,
+      school: data.school
+    });
+
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    return res.json(result.child);
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
+router.delete('/children/:childId', requireAuth, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'parentA') {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    const { childId } = z.object({ childId: entityIdSchema }).parse(req.params);
+    const result = await deleteChild({
+      workspaceId: req.user.workspaceId,
+      childId
+    });
+
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    return res.status(204).send();
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
+router.patch('/current', requireAuth, async (req, res, next) => {
+  try {
+    if (req.user.role !== 'parentA' && req.user.role !== 'parentB') {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    const data = z
+      .object({ name: z.string().trim().min(2).max(120) })
+      .parse(req.body);
+
+    const result = await updateWorkspaceName({
+      workspaceId: req.user.workspaceId,
+      name: data.name
+    });
+
+    if (result.error) {
+      return res.status(result.status).json({ error: result.error });
+    }
+
+    return res.json(result.workspace);
   } catch (error) {
     if (error?.name === 'ZodError') {
       return res.status(400).json({ error: 'invalid_request' });
