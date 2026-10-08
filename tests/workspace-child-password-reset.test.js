@@ -264,7 +264,7 @@ describe(
         { token: observerToken }
       );
       assert.equal(res.status, 403, JSON.stringify(res.json));
-      assert.equal(res.json.error, 'forbidden');
+      assert.equal(res.json.error, 'role_not_supported');
     });
 
     it('child cannot reset own password via this endpoint: 403', async () => {

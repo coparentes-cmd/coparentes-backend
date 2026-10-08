@@ -27,7 +27,9 @@ describe('Child read RBAC', { skip: !dbAvailable }, () => {
   /** @type {string} */
   let parentToken;
   /** @type {string} */
-  let observerToken;
+  let observerId;
+  /** @type {string} */
+  let observerEmail;
   /** @type {string} */
   let workspaceId;
 
@@ -58,19 +60,20 @@ describe('Child read RBAC', { skip: !dbAvailable }, () => {
       }
     });
 
+    observerEmail = `rbac-observer-${Date.now()}@example.com`;
     const observer = await prisma.user.create({
       data: {
         workspaceId: workspace.id,
         name: 'Observer',
-        email: `rbac-observer-${Date.now()}@example.com`,
+        email: observerEmail,
         passwordHash,
         role: 'observer'
       }
     });
+    observerId = observer.id;
 
     parentToken = await createSessionForUser(parent.id);
     childToken = await createSessionForUser(child.id);
-    observerToken = await createSessionForUser(observer.id);
   });
 
   after(async () => {
@@ -92,9 +95,11 @@ describe('Child read RBAC', { skip: !dbAvailable }, () => {
     assert.equal(res.status, 200);
   });
 
-  it('allows observer to list exports', async () => {
-    const res = await request(server, 'GET', '/api/exports', { token: observerToken });
-    assert.equal(res.status, 200);
+  it('blocks retired observer role from listing exports', async () => {
+    const token = await createSessionForUser(observerId);
+    const res = await request(server, 'GET', '/api/exports', { token });
+    assert.equal(res.status, 403);
+    assert.equal(res.json.error, 'role_not_supported');
   });
 
   it('blocks child from listing finances', async () => {
@@ -112,16 +117,29 @@ describe('Child read RBAC', { skip: !dbAvailable }, () => {
     assert.equal(res.status, 200);
   });
 
-  it('allows observer to list finances', async () => {
+  it('blocks retired observer role from listing finances', async () => {
+    const token = await createSessionForUser(observerId);
     const res = await request(server, 'GET', '/api/finances/expenses', {
-      token: observerToken
+      token
     });
-    assert.equal(res.status, 200);
+    assert.equal(res.status, 403);
+    assert.equal(res.json.error, 'role_not_supported');
   });
 
   it('blocks child from listing documents', async () => {
     const res = await request(server, 'GET', '/api/documents', { token: childToken });
     assert.equal(res.status, 403);
     assert.equal(res.json.error, 'forbidden');
+  });
+
+  it('rejects login for retired observer role', async () => {
+    const res = await request(server, 'POST', '/api/auth/login', {
+      body: {
+        email: observerEmail,
+        password: 'Password1234!'
+      }
+    });
+    assert.equal(res.status, 403);
+    assert.equal(res.json.error, 'role_not_supported');
   });
 });

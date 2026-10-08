@@ -160,7 +160,15 @@ const loginSchema = z.object({
 });
 
 async function issueSessionResponse(user, statusCode, res, { trustedDeviceToken } = {}) {
-  const payload = await buildSessionPayload(user);
+  let payload;
+  try {
+    payload = await buildSessionPayload(user);
+  } catch (error) {
+    if (error?.code === 'role_not_supported') {
+      return res.status(403).json({ error: 'role_not_supported' });
+    }
+    throw error;
+  }
 
   setSessionCookie(res, payload.token);
 

@@ -67,6 +67,11 @@ async function findChildByDateOfBirth(workspaceId, dateOfBirth) {
 }
 
 export async function buildSessionPayload(user) {
+  if (user.role === 'observer') {
+    const error = new Error('role_not_supported');
+    error.code = 'role_not_supported';
+    throw error;
+  }
   const token = await createSessionForUser(user.id);
   const { user: serializedUser, workspace } = await buildAuthPayload(user);
   return { token, user: serializedUser, workspace };
@@ -264,6 +269,11 @@ export async function loginUser({ email, password, req }) {
 
   if (!user.workspaceId) {
     return { error: 'user_missing_workspace', status: 403 };
+  }
+
+  // Observer product path retired — enum value may still exist in DB.
+  if (user.role === 'observer') {
+    return { error: 'role_not_supported', status: 403 };
   }
 
   const trustedToken = readTrustedDeviceToken(req);

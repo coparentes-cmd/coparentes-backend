@@ -1,4 +1,5 @@
 import { prisma } from '../lib/prisma.js';
+import { isRetiredAuthRole } from './rbac.js';
 import { readSessionToken } from '../services/sessionCookie.service.js';
 import {
   deleteSession,
@@ -31,6 +32,11 @@ export async function requireAuth(req, res, next) {
         await deleteSession(token);
       }
       return res.status(401).json({ error: 'invalid_session' });
+    }
+
+    if (isRetiredAuthRole(user.role)) {
+      await deleteSession(token);
+      return res.status(403).json({ error: 'role_not_supported' });
     }
 
     req.user = user;

@@ -128,18 +128,6 @@ export async function seedDemoData(options = {}) {
     }
   });
 
-  await prisma.user.create({
-    data: {
-      id: 'user_observer',
-      workspaceId: workspace.id,
-      name: 'Adw. Maria Nowak',
-      email: 'maria@coparentes.app',
-      passwordHash,
-      role: 'observer',
-      twoFactorEnabled: true
-    }
-  });
-
   const child = await prisma.child.create({
     data: {
       id: 'child_zosia',
