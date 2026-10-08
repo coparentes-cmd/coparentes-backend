@@ -37,21 +37,13 @@ import { isValidX25519PublicKeyBase64 } from '../utils/x25519PublicKey.js';
 import { createToken, hashPasswordResetToken } from '../utils/security.js';
 import { env } from '../utils/env.js';
 import crypto from 'node:crypto';
+import {
+  isSameCalendarDay,
+  normalizeDateOfBirth
+} from '../utils/dateOfBirth.js';
 
 function parseDateOfBirth(value) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return null;
-  }
-  return date;
-}
-
-function isSameCalendarDay(left, right) {
-  return (
-    left.getUTCFullYear() === right.getUTCFullYear() &&
-    left.getUTCMonth() === right.getUTCMonth() &&
-    left.getUTCDate() === right.getUTCDate()
-  );
+  return normalizeDateOfBirth(value);
 }
 
 function childAccountEmail(childProfileId) {

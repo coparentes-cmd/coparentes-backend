@@ -13,6 +13,7 @@ import {
 import { requestChildPasswordReset } from '../services/authService.js';
 import { prisma } from '../lib/prisma.js';
 import { entityIdSchema } from '../utils/ids.js';
+import { isDateOfBirthInFuture, normalizeDateOfBirth } from '../utils/dateOfBirth.js';
 
 const router = express.Router();
 
@@ -68,13 +69,11 @@ router.post('/children', requireAuth, async (req, res, next) => {
       school: z.string().trim().min(1).max(200).nullable().optional()
     });
     const data = schema.parse(req.body);
-    const dateOfBirth = new Date(data.dateOfBirth);
-
-    if (Number.isNaN(dateOfBirth.getTime())) {
+    if (!normalizeDateOfBirth(data.dateOfBirth)) {
       return res.status(400).json({ error: 'invalid_request' });
     }
 
-    if (dateOfBirth > new Date()) {
+    if (isDateOfBirthInFuture(data.dateOfBirth)) {
       return res.status(400).json({ error: 'invalid_date_of_birth' });
     }
 
@@ -84,6 +83,10 @@ router.post('/children', requireAuth, async (req, res, next) => {
       dateOfBirth: data.dateOfBirth,
       school: data.school ?? null
     });
+
+    if (child?.error) {
+      return res.status(child.status).json({ error: child.error });
+    }
 
     return res.status(201).json(child);
   } catch (error) {
@@ -109,8 +112,10 @@ router.patch('/children/:childId', requireAuth, async (req, res, next) => {
     const data = schema.parse(req.body);
 
     if (data.dateOfBirth) {
-      const dob = new Date(data.dateOfBirth);
-      if (Number.isNaN(dob.getTime()) || dob > new Date()) {
+      if (
+        !normalizeDateOfBirth(data.dateOfBirth) ||
+        isDateOfBirthInFuture(data.dateOfBirth)
+      ) {
         return res.status(400).json({ error: 'invalid_date_of_birth' });
       }
     }

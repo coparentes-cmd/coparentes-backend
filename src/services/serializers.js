@@ -8,6 +8,7 @@ import {
   decryptOptionalSafe,
   documentContentKey
 } from './crypto.service.js';
+import { normalizeDateOfBirth } from '../utils/dateOfBirth.js';
 
 export function serializeUser(user) {
   return {
@@ -30,10 +31,11 @@ export function serializeUser(user) {
 }
 
 export function serializeChild(child) {
+  const dob = normalizeDateOfBirth(child.dateOfBirth) ?? child.dateOfBirth;
   return {
     id: child.id,
     name: decryptOptionalSafe(child.name, CRYPTO_KEYS.KEY_GENERAL, 'Dziecko'),
-    dateOfBirth: child.dateOfBirth.toISOString(),
+    dateOfBirth: dob.toISOString(),
     school: decryptOptionalSafe(child.school, CRYPTO_KEYS.KEY_GENERAL, ''),
     inviteCode: child.inviteCode ?? null,
     // Additive: User.id of the linked child login account, or null if not joined yet.

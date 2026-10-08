@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js';
 import { createInviteCode } from '../utils/security.js';
 import { env } from '../utils/env.js';
+import { normalizeDateOfBirth } from '../utils/dateOfBirth.js';
 import { serializeChild, serializeUser } from './serializers.js';
 import { CRYPTO_KEYS, encryptOptional, decryptOptionalSafe } from './crypto.service.js';
 
@@ -218,11 +219,15 @@ export async function createChild({
   school
 }) {
   const inviteCode = await generateUniqueChildInviteCode();
+  const dob = normalizeDateOfBirth(dateOfBirth);
+  if (!dob) {
+    return { error: 'invalid_date_of_birth', status: 400 };
+  }
   const row = await prisma.child.create({
     data: {
       workspaceId,
       name: encryptOptional(name, CRYPTO_KEYS.KEY_GENERAL),
-      dateOfBirth: new Date(dateOfBirth),
+      dateOfBirth: dob,
       school: encryptOptional(school ?? null, CRYPTO_KEYS.KEY_GENERAL),
       inviteCode
     },
@@ -252,7 +257,11 @@ export async function updateChild({
     data.name = encryptOptional(name, CRYPTO_KEYS.KEY_GENERAL);
   }
   if (dateOfBirth != null) {
-    data.dateOfBirth = new Date(dateOfBirth);
+    const dob = normalizeDateOfBirth(dateOfBirth);
+    if (!dob) {
+      return { error: 'invalid_date_of_birth', status: 400 };
+    }
+    data.dateOfBirth = dob;
   }
   if (school !== undefined) {
     data.school = encryptOptional(school ?? null, CRYPTO_KEYS.KEY_GENERAL);

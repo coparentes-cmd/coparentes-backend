@@ -141,5 +141,53 @@ describe(
       assert.equal(badLogin.status, 401);
       assert.equal(badLogin.json.error, 'invalid_credentials');
     });
+
+    it('matches DOB across timezone offsets (calendar day, not instant)', async () => {
+      const register = await request(server, 'POST', '/api/auth/register', {
+        body: {
+          name: 'Dob Parent',
+          email: `dob-tz-${Date.now()}@test.coparentes.app`,
+          password: PARENT_PASSWORD,
+          workspaceName: 'Dob Tz Family',
+          consents
+        }
+      });
+      assert.equal(register.status, 201, JSON.stringify(register.json));
+      workspaceIds.push(register.json.workspace.id);
+      const parentToken = register.json.token;
+
+      // Legacy write: local PL midnight for 2013-07-24 → 2013-07-23T22:00:00.000Z
+      // (same shape as Basia in prod). UTC calendar day is still 23.
+      const legacyStored = '2013-07-23T22:00:00.000Z';
+      const add = await request(server, 'POST', '/api/workspace/children', {
+        token: parentToken,
+        body: { name: 'Basia Tz', dateOfBirth: legacyStored }
+      });
+      assert.equal(add.status, 201, JSON.stringify(add.json));
+
+      // Flutter dateOfBirthToApiIso for picked 23-07-2013 → noon UTC that day.
+      const flutterFixed = '2013-07-23T12:00:00.000Z';
+      const join = await request(server, 'POST', '/api/auth/child/access', {
+        body: {
+          childInviteCode: add.json.inviteCode,
+          dateOfBirth: flutterFixed,
+          password: CHILD_PASSWORD,
+          name: 'Basia Tz'
+        }
+      });
+      assert.equal(join.status, 201, JSON.stringify(join.json));
+
+      // Old Flutter toUtc() for picked 23-07-2013 in CEST → previous UTC day.
+      const oldClient = '2013-07-22T22:00:00.000Z';
+      const mismatch = await request(server, 'POST', '/api/auth/child/access', {
+        body: {
+          childInviteCode: add.json.inviteCode,
+          dateOfBirth: oldClient,
+          password: CHILD_PASSWORD
+        }
+      });
+      assert.equal(mismatch.status, 400);
+      assert.equal(mismatch.json.error, 'child_dob_mismatch');
+    });
   }
 );
