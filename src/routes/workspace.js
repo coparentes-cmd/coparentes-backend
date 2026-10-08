@@ -1,5 +1,6 @@
 import express from 'express';
 import rateLimit, { MemoryStore } from 'express-rate-limit';
+import bcrypt from 'bcryptjs';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.js';
 import { requireParentRole } from '../middleware/rbac.js';
@@ -141,13 +142,35 @@ router.patch('/children/:childId', requireAuth, async (req, res, next) => {
   }
 });
 
-router.delete('/children/:childId', requireAuth, async (req, res, next) => {
+const deleteChildBodySchema = z.object({
+  password: z.string().min(1)
+});
+
+/**
+ * POST /api/workspace/children/:childId/delete
+ * Soft-remove child profile; requires parent password confirmation.
+ * (POST+body — same pattern as /account/delete; DELETE bodies are unreliable.)
+ */
+router.post('/children/:childId/delete', requireAuth, async (req, res, next) => {
   try {
     if (req.user.role !== 'parentA') {
       return res.status(403).json({ error: 'forbidden' });
     }
 
     const { childId } = z.object({ childId: entityIdSchema }).parse(req.params);
+    const { password } = deleteChildBodySchema.parse(req.body ?? {});
+
+    const actor = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { passwordHash: true }
+    });
+    if (
+      !actor?.passwordHash ||
+      !(await bcrypt.compare(password, actor.passwordHash))
+    ) {
+      return res.status(401).json({ error: 'invalid_credentials' });
+    }
+
     const result = await deleteChild({
       workspaceId: req.user.workspaceId,
       childId
