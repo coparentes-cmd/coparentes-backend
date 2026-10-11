@@ -54,7 +54,10 @@ export const env = {
   otpTtlMinutes: Number(process.env.OTP_TTL_MINUTES || 10),
   otpMaxAttempts: Number(process.env.OTP_MAX_ATTEMPTS || 5),
   otpResendCooldownSeconds: Number(process.env.OTP_RESEND_COOLDOWN_SECONDS || 60),
-  trustedDeviceTtlDays: Number(process.env.TRUSTED_DEVICE_TTL_DAYS || 30)
+  trustedDeviceTtlDays: Number(process.env.TRUSTED_DEVICE_TTL_DAYS || 30),
+  weeklyStatsEnabled: process.env.WEEKLY_STATS_ENABLED === 'true',
+  cronSecret: process.env.CRON_SECRET || '',
+  statsEmailTo: process.env.STATS_EMAIL_TO || 'coparentes@gmail.com'
 };
 
 export function validateProductionEnv() {

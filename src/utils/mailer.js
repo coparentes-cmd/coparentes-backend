@@ -381,6 +381,79 @@ export async function sendRecoveryCodeEmail({
   }
 }
 
+/** Last weekly-stats recipients when MAILER_STUB_SUCCESS=true (tests only). */
+let stubLastWeeklyStatsRecipients = null;
+/** @type {object | null} */
+let stubLastWeeklyStatsPayload = null;
+
+/** @returns {string[] | null} */
+export function getStubLastWeeklyStatsRecipients() {
+  return stubLastWeeklyStatsRecipients == null
+    ? null
+    : [...stubLastWeeklyStatsRecipients];
+}
+
+/** @returns {object | null} */
+export function getStubLastWeeklyStatsPayload() {
+  return stubLastWeeklyStatsPayload;
+}
+
+/**
+ * Ops digest: account/workspace counts only (no emails / names).
+ * @param {{ to: string | string[], stats: object }} args
+ */
+export async function sendWeeklyStatsEmail({ to, stats }) {
+  const recipients = Array.isArray(to) ? [...to] : [to];
+  if (process.env.MAILER_STUB_SUCCESS === 'true') {
+    stubLastWeeklyStatsRecipients = recipients.map((r) => String(r));
+    stubLastWeeklyStatsPayload = stats && typeof stats === 'object' ? { ...stats } : null;
+  }
+
+  const byRole = stats?.usersByRole || {};
+  const generatedAt = stats?.generatedAt || new Date().toISOString();
+  const subject = `Coparentes — tygodniowe statystyki kont (${generatedAt.slice(0, 10)})`;
+
+  const text =
+    `Coparentes — tygodniowe statystyki kont\n\n` +
+    `Wygenerowano: ${generatedAt}\n\n` +
+    `Aktywne konta (bez soft-delete): ${stats?.usersActive ?? 0}\n` +
+    `  - rodzice (parentA+parentB): ${stats?.parentsActive ?? 0}\n` +
+    `  - parentA: ${byRole.parentA ?? 0}\n` +
+    `  - parentB: ${byRole.parentB ?? 0}\n` +
+    `  - child: ${byRole.child ?? 0}\n` +
+    `  - observer: ${byRole.observer ?? 0}\n` +
+    `Usunięte konta (soft-delete): ${stats?.usersDeleted ?? 0}\n` +
+    `Workspace'y: ${stats?.workspacesTotal ?? 0}\n` +
+    `Nowe konta (7 dni): ${stats?.usersCreatedLast7Days ?? 0}\n` +
+    `Nowe konta (30 dni): ${stats?.usersCreatedLast30Days ?? 0}\n\n` +
+    `To automatyczny raport operacyjny. Nie zawiera danych osobowych.`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.55; color: #111111; max-width: 560px;">
+      <h2 style="color: #00C896; margin-bottom: 8px;">Coparentes — tygodniowe statystyki</h2>
+      <p style="color: #5F6673; font-size: 13px;">Wygenerowano: ${escapeHtml(generatedAt)}</p>
+      <table style="border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 14px;">
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB;">Aktywne konta</td><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB; text-align: right; font-weight: 700;">${Number(stats?.usersActive ?? 0)}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB;">Rodzice (A+B)</td><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB; text-align: right;">${Number(stats?.parentsActive ?? 0)}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB;">parentA / parentB</td><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB; text-align: right;">${Number(byRole.parentA ?? 0)} / ${Number(byRole.parentB ?? 0)}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB;">child / observer</td><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB; text-align: right;">${Number(byRole.child ?? 0)} / ${Number(byRole.observer ?? 0)}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB;">Usunięte (soft-delete)</td><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB; text-align: right;">${Number(stats?.usersDeleted ?? 0)}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB;">Workspace'y</td><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB; text-align: right; font-weight: 700;">${Number(stats?.workspacesTotal ?? 0)}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB;">Nowe konta (7 dni)</td><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB; text-align: right;">${Number(stats?.usersCreatedLast7Days ?? 0)}</td></tr>
+        <tr><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB;">Nowe konta (30 dni)</td><td style="padding: 8px 0; border-bottom: 1px solid #E5E7EB; text-align: right;">${Number(stats?.usersCreatedLast30Days ?? 0)}</td></tr>
+      </table>
+      <p style="color: #5F6673; font-size: 12px;">Automatyczny raport operacyjny — bez danych osobowych.</p>
+    </div>
+  `;
+
+  return dispatchEmail({
+    to: recipients,
+    subject,
+    text,
+    html
+  });
+}
+
 /** Kept for unit smoke tests of mail soft-fail; no longer used by auth reset flow. */
 export async function sendTempPasswordEmail({ to, tempPassword }) {
   const safePassword = escapeHtml(tempPassword);

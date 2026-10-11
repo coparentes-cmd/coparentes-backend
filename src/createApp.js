@@ -12,6 +12,7 @@ import documentRoutes from './routes/documents.js';
 import workspaceRoutes from './routes/workspace.js';
 import userRoutes from './routes/user.js';
 import accountRoutes from './routes/account.js';
+import internalRoutes from './routes/internal.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import mongoSanitize from 'express-mongo-sanitize';
 import {
@@ -93,6 +94,9 @@ export function createApp() {
 
   // Soft-delete own account
   app.use('/api/account', accountRoutes);
+
+  // Ops cron (weekly stats mail) — CRON_SECRET, not user session
+  app.use('/api/internal', internalRoutes);
 
   // Flutter: optional email invites
   app.use('/api/invite', inviteRoutes);
