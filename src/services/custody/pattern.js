@@ -4,7 +4,7 @@ import {
   DAY_NAMES,
   PATTERN_PRESETS
 } from './constants.js';
-import { utcDayStart } from './dateUtils.js';
+import { calendarWeekIndexSince, utcDayStart } from './dateUtils.js';
 
 const INTERVAL_META_KEY = '_weekInterval';
 const WEEKDAY_KEYS = [
@@ -72,10 +72,8 @@ function weeksEqual(a, b) {
 export function getCustodianForDate(schedule, date) {
   const weekAParsed = parseWeekPayload(schedule.weekAJson);
   const weekBParsed = parseWeekPayload(schedule.weekBJson);
-  const start = utcDayStart(schedule.startDate);
   const current = utcDayStart(date);
-  const diffDays = Math.floor((current - start) / (24 * 60 * 60 * 1000));
-  const weekIndex = Math.floor(diffDays / 7);
+  const weekIndex = calendarWeekIndexSince(schedule.startDate, date);
   const dayName = DAY_NAMES[current.getUTCDay()];
 
   if (schedule.patternType === 'customWeek') {
