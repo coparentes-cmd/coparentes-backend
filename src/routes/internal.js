@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { timingSafeEqual } from 'node:crypto';
-import { getAccountStats } from '../services/accountStats.js';
-import { sendWeeklyStatsEmail } from '../utils/mailer.js';
+import { runWeeklyStatsJob } from '../services/weeklyStatsJob.js';
 
 const router = Router();
 
@@ -11,11 +10,6 @@ function weeklyStatsEnabled() {
 
 function cronSecret() {
   return String(process.env.CRON_SECRET || '').trim();
-}
-
-function statsEmailTo() {
-  const configured = String(process.env.STATS_EMAIL_TO || '').trim();
-  return configured || 'coparentes@gmail.com';
 }
 
 function extractProvidedSecret(req) {
@@ -64,28 +58,21 @@ router.post('/cron/weekly-stats', async (req, res) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  try {
-    const stats = await getAccountStats();
-    const to = statsEmailTo();
-    const mail = await sendWeeklyStatsEmail({ to, stats });
-
-    if (!mail?.emailSent) {
-      return res.status(502).json({
-        error: 'email_send_failed',
-        stats
-      });
-    }
-
-    return res.status(200).json({
-      ok: true,
-      emailedTo: to,
-      messageId: mail.id || null,
-      stats
+  const result = await runWeeklyStatsJob();
+  if (!result.ok) {
+    return res.status(result.status).json({
+      error: result.error,
+      ...(result.stats ? { stats: result.stats } : {})
     });
-  } catch (error) {
-    console.error('[internal] weekly-stats failed:', error?.message || error);
-    return res.status(500).json({ error: 'weekly_stats_failed' });
   }
+
+  return res.status(200).json({
+    ok: true,
+    emailedTo: result.emailedTo,
+    messageId: result.messageId,
+    stats: result.stats,
+    ...(result.skipped ? { skipped: true } : {})
+  });
 });
 
 export default router;

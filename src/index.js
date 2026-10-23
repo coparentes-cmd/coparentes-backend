@@ -6,6 +6,7 @@ import { getEmailFromSummary, isEmailDeliveryConfigured } from './utils/mailer.j
 import { seedDemoData } from './lib/seed.js';
 import { purgeExpiredSessions } from './services/session.js';
 import { purgeExpiredExportJobs } from './services/exports.js';
+import { startWeeklyStatsScheduler } from './services/weeklyStatsJob.js';
 
 const PURGE_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -51,6 +52,8 @@ async function start() {
   }
 
   startPurgeInterval();
+  // Ops digest mail — runs even if external cron-job.org is misconfigured.
+  startWeeklyStatsScheduler();
 
   app.listen(env.port, () => {
     const cors = getCorsConfigSummary();

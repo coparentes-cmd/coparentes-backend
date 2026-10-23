@@ -19,6 +19,11 @@ import {
   getStubLastWeeklyStatsRecipients,
   sendWeeklyStatsEmail
 } from '../src/utils/mailer.js';
+import {
+  getWarsawParts,
+  resetWeeklyStatsSchedulerForTests,
+  runWeeklyStatsJob
+} from '../src/services/weeklyStatsJob.js';
 
 describe('sendWeeklyStatsEmail (stub)', () => {
   it('sends to configured recipient with counts only', async () => {
@@ -47,6 +52,32 @@ describe('sendWeeklyStatsEmail (stub)', () => {
   });
 });
 
+describe('weeklyStatsJob helpers', () => {
+  it('getWarsawParts returns dayKey and clock fields', () => {
+    const parts = getWarsawParts(new Date('2026-10-23T18:00:00.000Z'));
+    assert.match(parts.dayKey, /^\d{4}-\d{2}-\d{2}$/);
+    assert.equal(typeof parts.hour, 'number');
+    assert.equal(typeof parts.minute, 'number');
+  });
+});
+
+describe(
+  'runWeeklyStatsJob dedupe',
+  { skip: !(await dbReady()) },
+  () => {
+    it('skips second send on the same Warsaw day', async () => {
+      resetWeeklyStatsSchedulerForTests();
+      const first = await runWeeklyStatsJob({ force: true });
+      assert.equal(first.ok, true);
+      assert.equal(first.skipped, undefined);
+      const second = await runWeeklyStatsJob();
+      assert.equal(second.ok, true);
+      assert.equal(second.skipped, true);
+      resetWeeklyStatsSchedulerForTests();
+    });
+  }
+);
+
 describe(
   'POST /api/internal/cron/weekly-stats',
   { skip: !(await dbReady()) },
@@ -55,11 +86,13 @@ describe(
     let server;
 
     before(async () => {
+      resetWeeklyStatsSchedulerForTests();
       server = await listen(createApp());
     });
 
     after(() => {
       server?.close();
+      resetWeeklyStatsSchedulerForTests();
     });
 
     it('rejects missing secret', async () => {
@@ -83,6 +116,7 @@ describe(
     });
 
     it('sends digest with valid Bearer secret', async () => {
+      resetWeeklyStatsSchedulerForTests();
       const res = await request(
         server,
         'POST',
@@ -100,7 +134,7 @@ describe(
       ]);
     });
 
-    it('accepts X-Cron-Secret header', async () => {
+    it('accepts X-Cron-Secret header (dedupe → skipped same day)', async () => {
       const res = await request(
         server,
         'POST',
@@ -113,6 +147,7 @@ describe(
       );
       assert.equal(res.status, 200);
       assert.equal(res.json?.ok, true);
+      assert.equal(res.json?.skipped, true);
     });
   }
 );
