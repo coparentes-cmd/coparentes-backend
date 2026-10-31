@@ -11,8 +11,8 @@ import {
 } from './messageAttachments.js';
 
 // UWAGA: każda nowa kategoria dodana tutaj domyślnie wymaga E2E threadKeys.
-// Jeśli nowa kategoria ma być kanałem systemowym (pisanym tylko przez backend,
-// bez E2E - jak SYSTEM_SCHEDULE_CATEGORY), musi zostać jawnie dodana do
+// Jeśli nowa kategoria ma być kanałem systemowym (powiadomienia backendu + czat rodziców,
+// bez E2E — jak SYSTEM_SCHEDULE_CATEGORY), musi zostać jawnie dodana do
 // isSystemCategory() poniżej, inaczej automatyczne wiadomości do niej będą
 // cicho failować w notifyXxx (błąd łapany w catch, nie widoczny bez sprawdzenia logów).
 export const CATEGORY_CHANNELS = [
@@ -24,7 +24,7 @@ export const CATEGORY_CHANNELS = [
 ];
 
 export const FAMILY_CATEGORY = 'Rodzina';
-/** Non-E2E channel written only by backend schedule/swap notifications. */
+/** Non-E2E channel: system schedule/swap notices + parent discussion. */
 export const SYSTEM_SCHEDULE_CATEGORY = 'Zmiana grafiku';
 
 export const MESSAGE_TYPE_USER = 'user';
@@ -55,8 +55,10 @@ export function canUserSendMessage(userRole, thread) {
   if (!canUserAccessThread(userRole, thread)) {
     return false;
   }
+  // System channel (Zmiana grafiku): parents may chat; children cannot.
+  // Automated notices still use addSystemMessageToThread.
   if (thread.isSystemChannel) {
-    return false;
+    return userRole === 'parentA' || userRole === 'parentB';
   }
   if (userRole === 'child') {
     return thread.audience === 'family';
@@ -457,7 +459,7 @@ export async function addMessageToThread({
 
   const normalizedAttachments = normalizeAttachments(attachments);
   const safeContent = String(content ?? '').trim();
-  if (!safeContent) {
+  if (!safeContent && normalizedAttachments.length === 0) {
     const error = new Error('message_empty');
     error.code = 'message_empty';
     throw error;

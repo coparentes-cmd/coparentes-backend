@@ -106,8 +106,10 @@ export async function parseReceiptImage({ contentBase64, mimeType }) {
 
   let data;
   try {
-    ({ data } = await Tesseract.recognize(buffer, 'pol', {
-      logger: () => {}
+    // pol+eng helps brand names (TK Maxx, TJX). PSM 6 = single text block (receipts).
+    ({ data } = await Tesseract.recognize(buffer, 'pol+eng', {
+      logger: () => {},
+      tessedit_pageseg_mode: '6'
     }));
   } catch {
     throwReceiptError('receipt_unreadable');

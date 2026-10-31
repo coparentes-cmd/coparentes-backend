@@ -44,6 +44,14 @@ describe('Flutter API contract (no DB)', () => {
     assert.equal(res.json.error, 'missing_token');
   });
 
+  it('PUT /api/threads/messages/:messageId/reaction — requires Bearer', async () => {
+    const res = await request(server, 'PUT', '/api/threads/messages/msg_test/reaction', {
+      body: { emoji: '👍' }
+    });
+    assert.equal(res.status, 401);
+    assert.equal(res.json.error, 'missing_token');
+  });
+
   it('POST /api/auth/logout — 401 without token (AuthRepository)', async () => {
     const res = await request(server, 'POST', '/api/auth/logout');
     assert.equal(res.status, 401);

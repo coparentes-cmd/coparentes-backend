@@ -137,6 +137,7 @@ model Workspace {
   documents      Document[]
   emailInvites   EmailInvite[]
   messageUserTags MessageUserTag[]
+  messageReactions MessageReaction[]
 
   @@index([inviteCode])
   @@index([childInviteCode])
@@ -188,6 +189,7 @@ model User {
   childProfile      Child?           @relation("ChildLinkedAccount", fields: [childProfileId], references: [id], onDelete: SetNull)
   consents          UserConsent[]
   messageUserTags   MessageUserTag[]
+  messageReactions  MessageReaction[]
 
   @@index([email])
   @@index([workspaceId])
@@ -344,10 +346,30 @@ model Message {
   hash        String
   attachmentsJson String? @db.Text
   userTags    MessageUserTag[]
+  reactions   MessageReaction[]
 
   @@index([threadId])
   @@index([workspaceId])
   @@index([sentAt])
+}
+
+/// Wspólna reakcja emoji na wiadomość (widoczna dla uczestników wątku, jak WhatsApp).
+model MessageReaction {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messageId   String
+  message     Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  threadId    String
+  emoji       String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, messageId])
+  @@index([workspaceId, threadId])
+  @@index([messageId])
 }
 
 /// Prywatny tag użytkownika przypisany do wiadomości (widoczny tylko dla właściciela).
