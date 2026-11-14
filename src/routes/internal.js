@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { timingSafeEqual } from 'node:crypto';
+import { prisma } from '../lib/prisma.js';
+import { sendPushToUser } from '../services/push.service.js';
 import { runWeeklyStatsJob } from '../services/weeklyStatsJob.js';
 
 const router = Router();
@@ -72,6 +74,49 @@ router.post('/cron/weekly-stats', async (req, res) => {
     messageId: result.messageId,
     stats: result.stats,
     ...(result.skipped ? { skipped: true } : {})
+  });
+});
+
+/**
+ * POST /api/internal/cron/push-d3-trial
+ *
+ * F2a skeleton for “trial ends in 3 days” push.
+ * Full trial selection comes in F3 — here we only stub-send to users that
+ * already have a DevicePushToken (dry-run list), protected by CRON_SECRET.
+ */
+router.post('/cron/push-d3-trial', async (req, res) => {
+  if (!cronSecret()) {
+    return res.status(503).json({ error: 'cron_secret_not_configured' });
+  }
+  if (!isAuthorizedCron(req)) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const rows = await prisma.devicePushToken.findMany({
+    distinct: ['userId'],
+    select: { userId: true }
+  });
+
+  const title = 'Coparentes';
+  const body =
+    'Okres testowy kończy się za 3 dni. Przedłuż dostęp w aplikacji, żeby nic nie stracić.';
+
+  let attempted = 0;
+  for (const row of rows) {
+    const result = await sendPushToUser({
+      userId: row.userId,
+      title,
+      body,
+      data: { type: 'trial_d3' }
+    });
+    attempted += result.attempted;
+  }
+
+  return res.status(200).json({
+    ok: true,
+    stubbed: true,
+    users: rows.length,
+    attempted
   });
 });
 

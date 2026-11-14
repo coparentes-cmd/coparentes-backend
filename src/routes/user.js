@@ -12,8 +12,68 @@ import {
   decryptOptionalSafe
 } from '../services/crypto.service.js';
 import { listParentEmails } from '../services/workspace.js';
+import {
+  upsertDevicePushToken,
+  deleteDevicePushTokens
+} from '../services/push.service.js';
 
 const router = express.Router();
+
+const pushTokenBodySchema = z.object({
+  token: z.string().min(8).max(4096),
+  platform: z.enum(['ios', 'android'])
+});
+
+const pushTokenDeleteSchema = z.object({
+  token: z.string().min(8).max(4096).optional()
+});
+
+/**
+ * POST /api/user/push-token
+ * Upsert FCM/APNs device token for the authenticated user (mobile only).
+ * Must be registered before /:userId routes.
+ */
+router.post('/push-token', requireAuth, async (req, res, next) => {
+  try {
+    const body = pushTokenBodySchema.parse(req.body);
+    const row = await upsertDevicePushToken({
+      userId: req.user.id,
+      token: body.token,
+      platform: body.platform
+    });
+    return res.status(200).json({
+      id: row.id,
+      platform: row.platform,
+      updatedAt: row.updatedAt
+    });
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
+/**
+ * DELETE /api/user/push-token
+ * Body `{ token }` removes one token; empty body removes all for this user.
+ */
+router.delete('/push-token', requireAuth, async (req, res, next) => {
+  try {
+    const body = pushTokenDeleteSchema.parse(req.body ?? {});
+    const result = await deleteDevicePushTokens({
+      userId: req.user.id,
+      token: body.token
+    });
+    return res.status(200).json({ deleted: result.count });
+  } catch (error) {
+    if (error?.name === 'ZodError') {
+      return res.status(400).json({ error: 'invalid_request' });
+    }
+    return next(error);
+  }
+});
+
 
 const RATE_LIMIT_MESSAGE = { error: 'Too many requests, try again later' };
 
