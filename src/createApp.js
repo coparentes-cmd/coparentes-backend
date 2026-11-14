@@ -13,6 +13,7 @@ import workspaceRoutes from './routes/workspace.js';
 import userRoutes from './routes/user.js';
 import accountRoutes from './routes/account.js';
 import billingRoutes from './routes/billing.js';
+import { stripeWebhookHandler } from './routes/billingWebhook.js';
 import internalRoutes from './routes/internal.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import mongoSanitize from 'express-mongo-sanitize';
@@ -47,6 +48,14 @@ export function createApp() {
   );
   app.use(applySecurityHeaders);
   app.use(createCorsMiddleware());
+
+  // Stripe webhooks need the raw body — mount before express.json().
+  app.post(
+    '/api/billing/webhook',
+    express.raw({ type: 'application/json' }),
+    stripeWebhookHandler
+  );
+
   app.use(express.json({ limit: '1mb' }));
   // Strip MongoDB / query-operator keys ($gt, $ne, …) from body, query, params.
   app.use(

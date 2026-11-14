@@ -5,9 +5,17 @@ import {
   startMobileTrial,
   billingPublicFields,
   hasMobileAppAccess,
+  isMobilePlatform,
   normalizeClientPlatform
 } from '../services/entitlement.service.js';
 import { serializeUser } from '../services/serializers.js';
+import { env } from '../utils/env.js';
+import {
+  createBillingPortalSession,
+  createCheckoutSession,
+  isStripeConfigured
+} from '../services/stripe.service.js';
+import { prisma } from '../lib/prisma.js';
 
 const router = Router();
 
@@ -18,6 +26,24 @@ function clientPlatform(req) {
     req.body?.platform ||
     'web'
   );
+}
+
+function billingReturnUrls() {
+  const base = (env.frontendUrl || 'http://localhost:8080').replace(/\/$/, '');
+  return {
+    successUrl: `${base}/?billing=success`,
+    cancelUrl: `${base}/?billing=cancel`,
+    portalReturnUrl: `${base}/?billing=portal`
+  };
+}
+
+function rejectIfWeb(req, res) {
+  const platform = normalizeClientPlatform(clientPlatform(req));
+  if (!isMobilePlatform(platform)) {
+    res.status(403).json({ error: 'stripe_mobile_only' });
+    return null;
+  }
+  return platform;
 }
 
 /**
@@ -67,6 +93,62 @@ router.post('/start-mobile-trial', requireAuth, async (req, res, next) => {
       ...billingPublicFields(result.user)
     });
   } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * POST /api/billing/checkout-session
+ * Mobile only. Returns Stripe Checkout URL (Test mode).
+ */
+router.post('/checkout-session', requireAuth, async (req, res, next) => {
+  try {
+    const platform = rejectIfWeb(req, res);
+    if (!platform) {
+      return undefined;
+    }
+    if (!isStripeConfigured()) {
+      return res.status(503).json({ error: 'stripe_not_configured' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const urls = billingReturnUrls();
+    const session = await createCheckoutSession(user, urls);
+    return res.status(200).json({
+      platform,
+      url: session.url,
+      sessionId: session.sessionId
+    });
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    return next(error);
+  }
+});
+
+/**
+ * POST /api/billing/portal-session
+ * Mobile only. Customer portal for existing Stripe customers.
+ */
+router.post('/portal-session', requireAuth, async (req, res, next) => {
+  try {
+    const platform = rejectIfWeb(req, res);
+    if (!platform) {
+      return undefined;
+    }
+    if (!isStripeConfigured()) {
+      return res.status(503).json({ error: 'stripe_not_configured' });
+    }
+
+    const user = await prisma.user.findUnique({ where: { id: req.user.id } });
+    const { portalReturnUrl } = billingReturnUrls();
+    const portal = await createBillingPortalSession(user, portalReturnUrl);
+    return res.status(200).json({ platform, url: portal.url });
+  } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({ error: error.message });
+    }
     return next(error);
   }
 });
