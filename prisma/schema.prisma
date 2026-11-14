@@ -190,6 +190,7 @@ model User {
   consents          UserConsent[]
   messageUserTags   MessageUserTag[]
   messageReactions  MessageReaction[]
+  devicePushTokens  DevicePushToken[]
 
   @@index([email])
   @@index([workspaceId])
@@ -441,6 +442,24 @@ model TrustedDevice {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+/// FCM/APNs device token for mobile push (F2). Not used on web.
+enum PushPlatform {
+  ios
+  android
+}
+
+model DevicePushToken {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  token     String       @unique
+  platform  PushPlatform
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([userId])
 }
 
 /// Zaproszenie e-mailowe (osobny flow od Workspace.inviteCode).
