@@ -12,6 +12,7 @@ import documentRoutes from './routes/documents.js';
 import workspaceRoutes from './routes/workspace.js';
 import userRoutes from './routes/user.js';
 import accountRoutes from './routes/account.js';
+import billingRoutes from './routes/billing.js';
 import internalRoutes from './routes/internal.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import mongoSanitize from 'express-mongo-sanitize';
@@ -94,6 +95,9 @@ export function createApp() {
 
   // Soft-delete own account
   app.use('/api/account', accountRoutes);
+
+  // F3: mobile trial / entitlement (web never gated by these routes' semantics)
+  app.use('/api/billing', billingRoutes);
 
   // Ops cron (weekly stats mail) — CRON_SECRET, not user session
   app.use('/api/internal', internalRoutes);
