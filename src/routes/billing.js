@@ -123,6 +123,13 @@ router.post('/checkout-session', requireAuth, async (req, res, next) => {
     if (error.status) {
       return res.status(error.status).json({ error: error.message });
     }
+    if (error?.type?.startsWith?.('Stripe') || error?.raw) {
+      console.error('[stripe checkout]', error.message);
+      return res.status(502).json({
+        error: 'stripe_checkout_failed',
+        detail: error.message
+      });
+    }
     return next(error);
   }
 });

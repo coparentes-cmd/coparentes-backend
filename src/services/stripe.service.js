@@ -77,7 +77,10 @@ export async function createCheckoutSession(user, urls) {
     subscription_data: {
       metadata: { userId: user.id }
     },
-    allow_promotion_codes: true
+    allow_promotion_codes: true,
+    // Account has Managed Payments on by default; classic Checkout + tax_code
+    // not required for F3 Test mobile SaaS subscription.
+    managed_payments: { enabled: false }
   });
 
   return {
@@ -204,7 +207,15 @@ export async function handleStripeWebhookEvent(event) {
     case 'customer.subscription.updated':
     case 'customer.subscription.created':
     case 'customer.subscription.deleted': {
-      await applySubscriptionToUser(event.data.object);
+      let subscription = event.data.object;
+      // Thin / partial webhook payloads may omit current_period_end — refresh.
+      if (!subscription.current_period_end && subscription.id) {
+        const stripe = getStripe();
+        if (stripe) {
+          subscription = await stripe.subscriptions.retrieve(subscription.id);
+        }
+      }
+      await applySubscriptionToUser(subscription);
       return { handled: true };
     }
     default:
