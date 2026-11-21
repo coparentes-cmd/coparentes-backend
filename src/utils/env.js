@@ -57,7 +57,12 @@ export const env = {
   trustedDeviceTtlDays: Number(process.env.TRUSTED_DEVICE_TTL_DAYS || 30),
   weeklyStatsEnabled: process.env.WEEKLY_STATS_ENABLED === 'true',
   cronSecret: process.env.CRON_SECRET || '',
-  statsEmailTo: process.env.STATS_EMAIL_TO || 'coparentes@gmail.com'
+  statsEmailTo: process.env.STATS_EMAIL_TO || 'coparentes@gmail.com',
+  // F3 Stripe (optional until Checkout is used; Test mode keys only in .env)
+  stripeSecretKey: process.env.STRIPE_SECRET_KEY || '',
+  stripePublishableKey: process.env.STRIPE_PUBLISHABLE_KEY || '',
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  stripePriceId: process.env.STRIPE_PRICE_ID || ''
 };
 
 export function validateProductionEnv() {
