@@ -60,7 +60,11 @@ router.post('/push-token', requireAuth, async (req, res, next) => {
  */
 router.delete('/push-token', requireAuth, async (req, res, next) => {
   try {
-    const body = pushTokenDeleteSchema.parse(req.body ?? {});
+    const raw =
+      req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+        ? req.body
+        : {};
+    const body = pushTokenDeleteSchema.parse(raw);
     const result = await deleteDevicePushTokens({
       userId: req.user.id,
       token: body.token

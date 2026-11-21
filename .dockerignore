@@ -1,0 +1,13 @@
+node_modules
+.pgdata
+.pgdata-*
+.git
+.env
+.env.*
+*.log
+coverage
+.DS_Store
+tests
+docs
+README*
+REPAIR_PLAN.md

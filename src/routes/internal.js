@@ -120,4 +120,42 @@ router.post('/cron/push-d3-trial', async (req, res) => {
   });
 });
 
+/**
+ * POST /api/internal/push/test-send
+ *
+ * Smoke helper: send one test notification to a userId that already has tokens.
+ * Body: { userId, title?, body? }. Protected by CRON_SECRET.
+ */
+router.post('/push/test-send', async (req, res) => {
+  if (!cronSecret()) {
+    return res.status(503).json({ error: 'cron_secret_not_configured' });
+  }
+  if (!isAuthorizedCron(req)) {
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+
+  const userId = typeof req.body?.userId === 'string' ? req.body.userId.trim() : '';
+  if (!userId) {
+    return res.status(400).json({ error: 'invalid_request', message: 'userId required' });
+  }
+
+  const title =
+    typeof req.body?.title === 'string' && req.body.title.trim()
+      ? req.body.title.trim()
+      : 'Coparentes';
+  const body =
+    typeof req.body?.body === 'string' && req.body.body.trim()
+      ? req.body.body.trim()
+      : 'Test push F2b';
+
+  const result = await sendPushToUser({
+    userId,
+    title,
+    body,
+    data: { type: 'test_send' }
+  });
+
+  return res.status(200).json({ ok: true, ...result });
+});
+
 export default router;

@@ -18,6 +18,11 @@ export function request(server, method, path, { token, body, headers: extraHeade
     headers.Authorization = `Bearer ${token}`;
   }
 
+  const payload = body !== undefined ? JSON.stringify(body) : null;
+  if (payload !== null) {
+    headers['Content-Length'] = Buffer.byteLength(payload);
+  }
+
   return new Promise((resolve, reject) => {
     const req = http.request(
       {
@@ -45,8 +50,8 @@ export function request(server, method, path, { token, body, headers: extraHeade
       }
     );
     req.on('error', reject);
-    if (body !== undefined) {
-      req.write(JSON.stringify(body));
+    if (payload !== null) {
+      req.write(payload);
     }
     req.end();
   });

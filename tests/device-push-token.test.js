@@ -141,4 +141,38 @@ describe('Device push token API', { skip: !(await dbReady()) }, () => {
     assert.equal(res.status, 400);
     assert.equal(res.json.error, 'invalid_request');
   });
+
+  it('sendPushToUser stubs without FIREBASE_SERVICE_ACCOUNT_JSON', async () => {
+    const prev = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+
+    const {
+      sendPushToUser,
+      __resetFirebaseAdminForTests
+    } = await import('../src/services/push.service.js');
+    __resetFirebaseAdminForTests();
+
+    const { token, user } = await registerProbe();
+    const fcm = `fcm-stub-${Date.now()}-abcdefghijklmnopqrstuvwxyz`;
+
+    await request(server, 'POST', '/api/user/push-token', {
+      token,
+      body: { token: fcm, platform: 'ios' }
+    });
+
+    const result = await sendPushToUser({
+      userId: user.id,
+      title: 'Stub',
+      body: 'No Firebase env'
+    });
+    assert.equal(result.attempted, 1);
+    assert.equal(result.stubbed, true);
+
+    __resetFirebaseAdminForTests();
+    if (prev !== undefined) {
+      process.env.FIREBASE_SERVICE_ACCOUNT_JSON = prev;
+    } else {
+      delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    }
+  });
 });
