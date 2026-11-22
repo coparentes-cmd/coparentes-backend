@@ -17,6 +17,15 @@ enum UserRole {
   observer
 }
 
+/// Mobile subscription / trial entitlement (F3). Web ignores this for access.
+enum BillingStatus {
+  none
+  trialing
+  active
+  expired
+  canceled
+}
+
 enum EmailInviteStatus {
   PENDING
   ACCEPTED
@@ -165,6 +174,15 @@ model User {
   /// Appearance prefs (Flutter AppProvider themeMode / colorScheme).
   themeMode        String    @default("light")
   colorScheme      String    @default("teal")
+  /// Mobile billing (F3). Web never gates on these fields.
+  billingStatus    BillingStatus @default(none)
+  trialStartedAt   DateTime?
+  trialEndsAt      DateTime?
+  currentPeriodEnd DateTime?
+  /// stripe | apple | google | manual — null until a source is attached.
+  billingSource    String?
+  stripeCustomerId String?
+  stripeSubscriptionId String?
   /// Soft-delete + anonymization timestamp. Non-null = account closed; excluded from parent slots / members.
   deletedAt        DateTime?
   createdAt        DateTime  @default(now())

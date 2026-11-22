@@ -143,8 +143,10 @@ describe('Device push token API', { skip: !(await dbReady()) }, () => {
   });
 
   it('sendPushToUser stubs without FIREBASE_SERVICE_ACCOUNT_JSON', async () => {
-    const prev = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const prevJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const prevFile = process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
     delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    delete process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
 
     const {
       sendPushToUser,
@@ -152,27 +154,34 @@ describe('Device push token API', { skip: !(await dbReady()) }, () => {
     } = await import('../src/services/push.service.js');
     __resetFirebaseAdminForTests();
 
-    const { token, user } = await registerProbe();
-    const fcm = `fcm-stub-${Date.now()}-abcdefghijklmnopqrstuvwxyz`;
+    try {
+      const { token, user } = await registerProbe();
+      const fcm = `fcm-stub-${Date.now()}-abcdefghijklmnopqrstuvwxyz`;
 
-    await request(server, 'POST', '/api/user/push-token', {
-      token,
-      body: { token: fcm, platform: 'ios' }
-    });
+      await request(server, 'POST', '/api/user/push-token', {
+        token,
+        body: { token: fcm, platform: 'ios' }
+      });
 
-    const result = await sendPushToUser({
-      userId: user.id,
-      title: 'Stub',
-      body: 'No Firebase env'
-    });
-    assert.equal(result.attempted, 1);
-    assert.equal(result.stubbed, true);
-
-    __resetFirebaseAdminForTests();
-    if (prev !== undefined) {
-      process.env.FIREBASE_SERVICE_ACCOUNT_JSON = prev;
-    } else {
-      delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+      const result = await sendPushToUser({
+        userId: user.id,
+        title: 'Stub',
+        body: 'No Firebase env'
+      });
+      assert.equal(result.attempted, 1);
+      assert.equal(result.stubbed, true);
+    } finally {
+      __resetFirebaseAdminForTests();
+      if (prevJson !== undefined) {
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON = prevJson;
+      } else {
+        delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+      }
+      if (prevFile !== undefined) {
+        process.env.FIREBASE_SERVICE_ACCOUNT_FILE = prevFile;
+      } else {
+        delete process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
+      }
     }
   });
 });

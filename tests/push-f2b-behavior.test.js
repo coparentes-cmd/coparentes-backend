@@ -199,30 +199,39 @@ describe('F2b push behavior', { skip: !(await dbReady()) }, () => {
   });
 
   it('invalid FIREBASE_SERVICE_ACCOUNT_JSON soft-fails (stub, no throw)', async () => {
-    const prev = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const prevJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const prevFile = process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
     process.env.FIREBASE_SERVICE_ACCOUNT_JSON = '{not-json';
+    delete process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
     __resetFirebaseAdminForTests();
 
-    const { token, user } = await registerProbe('bad-json');
-    const device = fcm('badjson');
-    await request(server, 'POST', '/api/user/push-token', {
-      token,
-      body: { token: device, platform: 'ios' }
-    });
+    try {
+      const { token, user } = await registerProbe('bad-json');
+      const device = fcm('badjson');
+      await request(server, 'POST', '/api/user/push-token', {
+        token,
+        body: { token: device, platform: 'ios' }
+      });
 
-    const result = await sendPushToUser({
-      userId: user.id,
-      title: 'Bad JSON',
-      body: 'should stub'
-    });
-    assert.equal(result.attempted, 1);
-    assert.equal(result.stubbed, true);
-
-    __resetFirebaseAdminForTests();
-    if (prev !== undefined) {
-      process.env.FIREBASE_SERVICE_ACCOUNT_JSON = prev;
-    } else {
-      delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+      const result = await sendPushToUser({
+        userId: user.id,
+        title: 'Bad JSON',
+        body: 'should stub'
+      });
+      assert.equal(result.attempted, 1);
+      assert.equal(result.stubbed, true);
+    } finally {
+      __resetFirebaseAdminForTests();
+      if (prevJson !== undefined) {
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON = prevJson;
+      } else {
+        delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+      }
+      if (prevFile !== undefined) {
+        process.env.FIREBASE_SERVICE_ACCOUNT_FILE = prevFile;
+      } else {
+        delete process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
+      }
     }
   });
 
@@ -246,17 +255,34 @@ describe('F2b push behavior', { skip: !(await dbReady()) }, () => {
     assert.equal(noUser.status, 400);
     assert.equal(noUser.json.error, 'invalid_request');
 
+    const prevJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const prevFile = process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
     delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    delete process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
     __resetFirebaseAdminForTests();
 
-    const ok = await request(server, 'POST', '/api/internal/push/test-send', {
-      headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
-      body: { userId: user.id, title: 'F2b', body: 'internal smoke' }
-    });
-    assert.equal(ok.status, 200, ok.raw);
-    assert.equal(ok.json.ok, true);
-    assert.equal(ok.json.attempted, 1);
-    assert.equal(ok.json.stubbed, true);
+    try {
+      const ok = await request(server, 'POST', '/api/internal/push/test-send', {
+        headers: { Authorization: `Bearer ${process.env.CRON_SECRET}` },
+        body: { userId: user.id, title: 'F2b', body: 'internal smoke' }
+      });
+      assert.equal(ok.status, 200, ok.raw);
+      assert.equal(ok.json.ok, true);
+      assert.equal(ok.json.attempted, 1);
+      assert.equal(ok.json.stubbed, true);
+    } finally {
+      __resetFirebaseAdminForTests();
+      if (prevJson !== undefined) {
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON = prevJson;
+      } else {
+        delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+      }
+      if (prevFile !== undefined) {
+        process.env.FIREBASE_SERVICE_ACCOUNT_FILE = prevFile;
+      } else {
+        delete process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
+      }
+    }
   });
 
   it('send covers both ios and android tokens for one user', async () => {
@@ -272,16 +298,33 @@ describe('F2b push behavior', { skip: !(await dbReady()) }, () => {
       body: { token: android, platform: 'android' }
     });
 
+    const prevJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    const prevFile = process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
     delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    delete process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
     __resetFirebaseAdminForTests();
 
-    const result = await sendPushToUser({
-      userId: user.id,
-      title: 'Both',
-      body: 'ios+android',
-      data: { type: 'multi' }
-    });
-    assert.equal(result.attempted, 2);
-    assert.equal(result.stubbed, true);
+    try {
+      const result = await sendPushToUser({
+        userId: user.id,
+        title: 'Both',
+        body: 'ios+android',
+        data: { type: 'multi' }
+      });
+      assert.equal(result.attempted, 2);
+      assert.equal(result.stubbed, true);
+    } finally {
+      __resetFirebaseAdminForTests();
+      if (prevJson !== undefined) {
+        process.env.FIREBASE_SERVICE_ACCOUNT_JSON = prevJson;
+      } else {
+        delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+      }
+      if (prevFile !== undefined) {
+        process.env.FIREBASE_SERVICE_ACCOUNT_FILE = prevFile;
+      } else {
+        delete process.env.FIREBASE_SERVICE_ACCOUNT_FILE;
+      }
+    }
   });
 });

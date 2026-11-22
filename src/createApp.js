@@ -12,6 +12,8 @@ import documentRoutes from './routes/documents.js';
 import workspaceRoutes from './routes/workspace.js';
 import userRoutes from './routes/user.js';
 import accountRoutes from './routes/account.js';
+import billingRoutes from './routes/billing.js';
+import { stripeWebhookHandler } from './routes/billingWebhook.js';
 import internalRoutes from './routes/internal.js';
 import { createCorsMiddleware } from './middleware/cors.js';
 import mongoSanitize from 'express-mongo-sanitize';
@@ -46,6 +48,14 @@ export function createApp() {
   );
   app.use(applySecurityHeaders);
   app.use(createCorsMiddleware());
+
+  // Stripe webhooks need the raw body — mount before express.json().
+  app.post(
+    '/api/billing/webhook',
+    express.raw({ type: 'application/json' }),
+    stripeWebhookHandler
+  );
+
   app.use(express.json({ limit: '1mb' }));
   // Strip MongoDB / query-operator keys ($gt, $ne, …) from body, query, params.
   app.use(
@@ -94,6 +104,9 @@ export function createApp() {
 
   // Soft-delete own account
   app.use('/api/account', accountRoutes);
+
+  // F3: mobile trial / entitlement (web never gated by these routes' semantics)
+  app.use('/api/billing', billingRoutes);
 
   // Ops cron (weekly stats mail) — CRON_SECRET, not user session
   app.use('/api/internal', internalRoutes);

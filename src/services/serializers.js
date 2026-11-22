@@ -26,6 +26,16 @@ export function serializeUser(user) {
     mustChangePassword: Boolean(user.mustChangePassword),
     themeMode: user.themeMode,
     colorScheme: user.colorScheme,
+    // F3 billing fields — web clients ignore; mobile uses for paywall/trial UI.
+    billingStatus: user.billingStatus ?? 'none',
+    trialStartedAt: user.trialStartedAt
+      ? user.trialStartedAt.toISOString()
+      : null,
+    trialEndsAt: user.trialEndsAt ? user.trialEndsAt.toISOString() : null,
+    currentPeriodEnd: user.currentPeriodEnd
+      ? user.currentPeriodEnd.toISOString()
+      : null,
+    billingSource: user.billingSource ?? null,
     createdAt: user.createdAt.toISOString()
   };
 }

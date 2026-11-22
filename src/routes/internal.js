@@ -80,9 +80,9 @@ router.post('/cron/weekly-stats', async (req, res) => {
 /**
  * POST /api/internal/cron/push-d3-trial
  *
- * F2a skeleton for “trial ends in 3 days” push.
- * Full trial selection comes in F3 — here we only stub-send to users that
- * already have a DevicePushToken (dry-run list), protected by CRON_SECRET.
+ * F3: push parents whose mobile trial ends within the next 3 calendar days
+ * (trialing + trialEndsAt in [now, now+3d]) and who have a DevicePushToken.
+ * Protected by CRON_SECRET.
  */
 router.post('/cron/push-d3-trial', async (req, res) => {
   if (!cronSecret()) {
@@ -92,9 +92,18 @@ router.post('/cron/push-d3-trial', async (req, res) => {
     return res.status(401).json({ error: 'unauthorized' });
   }
 
-  const rows = await prisma.devicePushToken.findMany({
-    distinct: ['userId'],
-    select: { userId: true }
+  const now = new Date();
+  const windowEnd = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000);
+
+  const candidates = await prisma.user.findMany({
+    where: {
+      role: { in: ['parentA', 'parentB'] },
+      billingStatus: 'trialing',
+      trialEndsAt: { gt: now, lte: windowEnd },
+      deletedAt: null,
+      devicePushTokens: { some: {} }
+    },
+    select: { id: true, trialEndsAt: true }
   });
 
   const title = 'Coparentes';
@@ -102,20 +111,27 @@ router.post('/cron/push-d3-trial', async (req, res) => {
     'Okres testowy kończy się za 3 dni. Przedłuż dostęp w aplikacji, żeby nic nie stracić.';
 
   let attempted = 0;
-  for (const row of rows) {
+  let sentUsers = 0;
+  for (const user of candidates) {
     const result = await sendPushToUser({
-      userId: row.userId,
+      userId: user.id,
       title,
       body,
-      data: { type: 'trial_d3' }
+      data: {
+        type: 'trial_d3',
+        trialEndsAt: user.trialEndsAt ? user.trialEndsAt.toISOString() : ''
+      }
     });
     attempted += result.attempted;
+    if (result.attempted > 0) {
+      sentUsers += 1;
+    }
   }
 
   return res.status(200).json({
     ok: true,
-    stubbed: true,
-    users: rows.length,
+    users: candidates.length,
+    sentUsers,
     attempted
   });
 });
